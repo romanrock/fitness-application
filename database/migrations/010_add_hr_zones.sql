@@ -1,0 +1,21 @@
+ALTER TABLE activity_details_run ADD COLUMN hr_z1_s REAL;
+ALTER TABLE activity_details_run ADD COLUMN hr_z2_s REAL;
+ALTER TABLE activity_details_run ADD COLUMN hr_z3_s REAL;
+ALTER TABLE activity_details_run ADD COLUMN hr_z4_s REAL;
+ALTER TABLE activity_details_run ADD COLUMN hr_z5_s REAL;
+ALTER TABLE activity_details_run ADD COLUMN hr_zone_score REAL;
+ALTER TABLE activity_details_run ADD COLUMN hr_zone_label TEXT;
+ALTER TABLE activity_details_run ADD COLUMN hr_max_used REAL;
+ALTER TABLE activity_details_run ADD COLUMN hr_rest_used REAL;
+ALTER TABLE activity_details_run ADD COLUMN hr_zone_method TEXT;
+
+ALTER TABLE activities_calc ADD COLUMN hr_z1_s REAL;
+ALTER TABLE activities_calc ADD COLUMN hr_z2_s REAL;
+ALTER TABLE activities_calc ADD COLUMN hr_z3_s REAL;
+ALTER TABLE activities_calc ADD COLUMN hr_z4_s REAL;
+ALTER TABLE activities_calc ADD COLUMN hr_z5_s REAL;
+ALTER TABLE activities_calc ADD COLUMN hr_zone_score REAL;
+ALTER TABLE activities_calc ADD COLUMN hr_zone_label TEXT;
+ALTER TABLE activities_calc ADD COLUMN hr_max_used REAL;
+ALTER TABLE activities_calc ADD COLUMN hr_rest_used REAL;
+ALTER TABLE activities_calc ADD COLUMN hr_zone_method TEXT;

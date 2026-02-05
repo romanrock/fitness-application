@@ -1,0 +1,11 @@
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY,
+  username TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE activities_raw ADD COLUMN user_id INTEGER;
+ALTER TABLE streams_raw ADD COLUMN user_id INTEGER;
+ALTER TABLE weather_raw ADD COLUMN user_id INTEGER;
+ALTER TABLE activities ADD COLUMN user_id INTEGER;

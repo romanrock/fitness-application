@@ -1,0 +1,8 @@
+{
+  "name": "Fitness Platform",
+  "short_name": "Fitness",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6f4ef",
+  "theme_color": "#c95a2b"
+}

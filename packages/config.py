@@ -1,0 +1,41 @@
+from pathlib import Path
+import os
+
+try:
+    from dotenv import load_dotenv
+except ImportError:  # pragma: no cover - optional in some environments
+    load_dotenv = None
+
+ROOT = Path(__file__).resolve().parents[1]
+
+if load_dotenv:
+    load_dotenv(ROOT / ".env")
+
+DB_PATH = Path(os.getenv("FITNESS_DB_PATH", ROOT / "data" / "fitness.db"))
+LAST_UPDATE_PATH = Path(os.getenv("FITNESS_LAST_UPDATE_PATH", ROOT / "data" / "last_update.json"))
+API_HOST = os.getenv("FITNESS_API_HOST", "127.0.0.1")
+API_PORT = int(os.getenv("FITNESS_API_PORT", "8000"))
+WEB_PORT = int(os.getenv("FITNESS_WEB_PORT", "8788"))
+REFRESH_SECONDS = int(os.getenv("FITNESS_REFRESH_SECONDS", "3600"))
+RUN_MODE = os.getenv("RUN_MODE", "dev").lower()
+STRAVA_LOCAL_PATH = Path(os.getenv("STRAVA_LOCAL_PATH", ROOT.parent / "strava-local-ingest"))
+RUN_STRAVA_SYNC = os.getenv("RUN_STRAVA_SYNC", "1") == "1"
+JWT_SECRET = os.getenv("FITNESS_JWT_SECRET", "dev-secret")
+JWT_ALG = os.getenv("FITNESS_JWT_ALG", "HS256")
+JWT_EXP_MINUTES = int(os.getenv("FITNESS_JWT_EXP_MINUTES", "60"))
+AUTH_DISABLED = os.getenv("FITNESS_AUTH_DISABLED", "1" if RUN_MODE == "dev" else "0") == "1"
+CORS_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "FITNESS_CORS_ORIGINS",
+        "http://127.0.0.1:8788,http://localhost:8788",
+    ).split(",")
+    if origin.strip()
+]
+REFRESH_ENABLED = os.getenv("FITNESS_REFRESH_ENABLED", "0") == "1"
+REFRESH_TTL_DAYS = int(os.getenv("FITNESS_REFRESH_TTL_DAYS", "14"))
+
+# HR zones configuration (HRR / Karvonen)
+HR_REST = float(os.getenv("FITNESS_HR_REST", "48"))
+HR_MAX = float(os.getenv("FITNESS_HR_MAX", "185"))
+HR_ZONE_METHOD = os.getenv("FITNESS_HR_ZONE_METHOD", "hrr")

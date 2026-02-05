@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fitness Platform Architecture</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0a0a0a;
+      --card: #151515;
+      --card-2: #1c1c1c;
+      --text: #f5f5f5;
+      --muted: #a3a3a3;
+      --accent: #0ea5e9;
+      --accent-2: #10b981;
+      --border: #2a2a2a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "SF Pro Display", "Inter", system-ui, -apple-system, sans-serif;
+      background: radial-gradient(circle at 20% 0%, #121212 0%, #0a0a0a 45%, #050505 100%);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    header {
+      padding: 48px 8vw 24px;
+    }
+    h1 {
+      margin: 0 0 8px 0;
+      font-size: 2.4rem;
+    }
+    h2 {
+      margin: 0 0 12px 0;
+      font-size: 1.4rem;
+      color: var(--accent);
+    }
+    h3 {
+      margin: 0 0 8px 0;
+      font-size: 1.1rem;
+    }
+    p {
+      margin: 0 0 12px 0;
+      color: var(--muted);
+    }
+    .container {
+      padding: 0 8vw 48px;
+      display: grid;
+      gap: 24px;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 20px;
+    }
+    .card {
+      background: linear-gradient(180deg, #1a1a1a 0%, #111 100%);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 18px 20px;
+    }
+    .pill {
+      display: inline-block;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: #111;
+      border: 1px solid var(--border);
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+    ul { margin: 0; padding-left: 18px; color: var(--muted); }
+    li { margin: 6px 0; }
+    footer {
+      padding: 24px 8vw 48px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="pill">Fitness Platform • Architecture Snapshot</div>
+    <h1>Architecture + Data Model</h1>
+    <p>This document captures the system architecture, data flow, and the current data model so we can align product and engineering on what exists today and what we are hardening next.</p>
+    <p class="pill">Last updated: 2026-02-05</p>
+  </header>
+
+  <section class="container">
+    <div class="card">
+      <h2>System Architecture</h2>
+      <svg viewBox="0 0 1100 360" width="100%" height="360" role="img" aria-label="System architecture diagram">
+        <defs>
+          <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#1f1f1f"/>
+            <stop offset="100%" stop-color="#0f0f0f"/>
+          </linearGradient>
+        </defs>
+        <rect x="20" y="30" width="200" height="70" rx="14" fill="url(#panel)" stroke="#2a2a2a"/>
+        <text x="120" y="60" text-anchor="middle" fill="#0ea5e9" font-size="14" font-weight="600">External Sources</text>
+        <text x="120" y="80" text-anchor="middle" fill="#a3a3a3" font-size="11">Strava • Weather • Golf (next)</text>
+
+        <rect x="250" y="30" width="200" height="70" rx="14" fill="url(#panel)" stroke="#2a2a2a"/>
+        <text x="350" y="60" text-anchor="middle" fill="#0ea5e9" font-size="14" font-weight="600">Ingestion Service</text>
+        <text x="350" y="80" text-anchor="middle" fill="#a3a3a3" font-size="11">Fetch + backfill + hourly sync</text>
+
+        <rect x="480" y="30" width="200" height="70" rx="14" fill="url(#panel)" stroke="#2a2a2a"/>
+        <text x="580" y="60" text-anchor="middle" fill="#0ea5e9" font-size="14" font-weight="600">Processing</text>
+        <text x="580" y="80" text-anchor="middle" fill="#a3a3a3" font-size="11">Normalize + metrics + zones + segments</text>
+
+        <rect x="710" y="30" width="200" height="70" rx="14" fill="url(#panel)" stroke="#2a2a2a"/>
+        <text x="810" y="60" text-anchor="middle" fill="#0ea5e9" font-size="14" font-weight="600">Storage</text>
+        <text x="810" y="80" text-anchor="middle" fill="#a3a3a3" font-size="11">SQLite (raw + norm + calc + views)</text>
+
+        <rect x="940" y="30" width="140" height="70" rx="14" fill="url(#panel)" stroke="#2a2a2a"/>
+        <text x="1010" y="60" text-anchor="middle" fill="#0ea5e9" font-size="14" font-weight="600">API</text>
+        <text x="1010" y="80" text-anchor="middle" fill="#a3a3a3" font-size="11">FastAPI + Auth (JWT)</text>
+
+        <rect x="710" y="140" width="370" height="85" rx="14" fill="url(#panel)" stroke="#2a2a2a"/>
+        <text x="895" y="168" text-anchor="middle" fill="#10b981" font-size="14" font-weight="600">Web App</text>
+        <text x="895" y="188" text-anchor="middle" fill="#a3a3a3" font-size="11">React • Vite • Dashboards + Insights</text>
+
+        <rect x="250" y="140" width="410" height="85" rx="14" fill="url(#panel)" stroke="#2a2a2a"/>
+        <text x="455" y="168" text-anchor="middle" fill="#10b981" font-size="14" font-weight="600">Data Layers</text>
+        <text x="455" y="188" text-anchor="middle" fill="#a3a3a3" font-size="11">raw → normalized → calculated → views</text>
+
+        <rect x="20" y="250" width="420" height="80" rx="14" fill="url(#panel)" stroke="#2a2a2a"/>
+        <text x="230" y="278" text-anchor="middle" fill="#10b981" font-size="13" font-weight="600">Observability</text>
+        <text x="230" y="296" text-anchor="middle" fill="#a3a3a3" font-size="11">pipeline runs • health endpoint • logs</text>
+
+        <line x1="220" y1="65" x2="250" y2="65" stroke="#3b82f6" stroke-width="2"/>
+        <line x1="450" y1="65" x2="480" y2="65" stroke="#3b82f6" stroke-width="2"/>
+        <line x1="680" y1="65" x2="710" y2="65" stroke="#3b82f6" stroke-width="2"/>
+        <line x1="910" y1="65" x2="940" y2="65" stroke="#3b82f6" stroke-width="2"/>
+        <line x1="810" y1="100" x2="810" y2="140" stroke="#3b82f6" stroke-width="2"/>
+        <line x1="580" y1="100" x2="580" y2="140" stroke="#10b981" stroke-width="2"/>
+      </svg>
+    </div>
+
+    <div class="card">
+      <h2>Data Model (Key Tables)</h2>
+      <svg viewBox="0 0 1100 420" width="100%" height="420" role="img" aria-label="Data model diagram">
+        <defs>
+          <linearGradient id="box" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#1e1e1e"/>
+            <stop offset="100%" stop-color="#0f0f0f"/>
+          </linearGradient>
+        </defs>
+        <rect x="20" y="40" width="220" height="100" rx="14" fill="url(#box)" stroke="#2a2a2a"/>
+        <text x="130" y="70" text-anchor="middle" fill="#0ea5e9" font-size="13" font-weight="600">activities</text>
+        <text x="130" y="90" text-anchor="middle" fill="#a3a3a3" font-size="11">activity_id, type, start_time</text>
+        <text x="130" y="108" text-anchor="middle" fill="#a3a3a3" font-size="11">distance_m, moving_s</text>
+
+        <rect x="260" y="40" width="240" height="100" rx="14" fill="url(#box)" stroke="#2a2a2a"/>
+        <text x="380" y="70" text-anchor="middle" fill="#0ea5e9" font-size="13" font-weight="600">activities_raw</text>
+        <text x="380" y="90" text-anchor="middle" fill="#a3a3a3" font-size="11">source_id, user_id, raw_json</text>
+
+        <rect x="520" y="40" width="240" height="100" rx="14" fill="url(#box)" stroke="#2a2a2a"/>
+        <text x="640" y="70" text-anchor="middle" fill="#0ea5e9" font-size="13" font-weight="600">streams_raw</text>
+        <text x="640" y="90" text-anchor="middle" fill="#a3a3a3" font-size="11">activity_id, stream_type, user_id</text>
+
+        <rect x="780" y="40" width="260" height="100" rx="14" fill="url(#box)" stroke="#2a2a2a"/>
+        <text x="910" y="70" text-anchor="middle" fill="#0ea5e9" font-size="13" font-weight="600">weather_raw</text>
+        <text x="910" y="90" text-anchor="middle" fill="#a3a3a3" font-size="11">activity_id, user_id, raw_json</text>
+
+        <rect x="20" y="180" width="260" height="120" rx="14" fill="url(#box)" stroke="#2a2a2a"/>
+        <text x="150" y="210" text-anchor="middle" fill="#10b981" font-size="13" font-weight="600">activities_norm</text>
+        <text x="150" y="230" text-anchor="middle" fill="#a3a3a3" font-size="11">smoothed series + hr_norm_json</text>
+        <text x="150" y="248" text-anchor="middle" fill="#a3a3a3" font-size="11">pace/cadence/hr smooth</text>
+
+        <rect x="300" y="180" width="260" height="120" rx="14" fill="url(#box)" stroke="#2a2a2a"/>
+        <text x="430" y="210" text-anchor="middle" fill="#10b981" font-size="13" font-weight="600">activities_calc</text>
+        <text x="430" y="230" text-anchor="middle" fill="#a3a3a3" font-size="11">pace, HR, zones, stride</text>
+        <text x="430" y="248" text-anchor="middle" fill="#a3a3a3" font-size="11">decoupling, drift, user_id</text>
+
+        <rect x="580" y="180" width="260" height="120" rx="14" fill="url(#box)" stroke="#2a2a2a"/>
+        <text x="710" y="210" text-anchor="middle" fill="#10b981" font-size="13" font-weight="600">activity_details_run</text>
+        <text x="710" y="230" text-anchor="middle" fill="#a3a3a3" font-size="11">run-only details + zones</text>
+
+        <rect x="860" y="180" width="220" height="120" rx="14" fill="url(#box)" stroke="#2a2a2a"/>
+        <text x="970" y="210" text-anchor="middle" fill="#10b981" font-size="13" font-weight="600">segments_best</text>
+        <text x="970" y="230" text-anchor="middle" fill="#a3a3a3" font-size="11">best_all / best_12w / activity</text>
+
+        <rect x="20" y="320" width="220" height="80" rx="14" fill="url(#box)" stroke="#2a2a2a"/>
+        <text x="130" y="350" text-anchor="middle" fill="#f59e0b" font-size="13" font-weight="600">pipeline_runs</text>
+        <text x="130" y="370" text-anchor="middle" fill="#a3a3a3" font-size="11">started_at, status, duration</text>
+
+        <rect x="260" y="320" width="220" height="80" rx="14" fill="url(#box)" stroke="#2a2a2a"/>
+        <text x="370" y="350" text-anchor="middle" fill="#f59e0b" font-size="13" font-weight="600">users</text>
+        <text x="370" y="370" text-anchor="middle" fill="#a3a3a3" font-size="11">username, password_hash</text>
+
+        <rect x="500" y="320" width="260" height="80" rx="14" fill="url(#box)" stroke="#2a2a2a"/>
+        <text x="630" y="350" text-anchor="middle" fill="#f59e0b" font-size="13" font-weight="600">refresh_tokens</text>
+        <text x="630" y="370" text-anchor="middle" fill="#a3a3a3" font-size="11">token, expires_at, revoked</text>
+
+        <line x1="240" y1="90" x2="260" y2="90" stroke="#3b82f6" stroke-width="2"/>
+        <line x1="500" y1="90" x2="520" y2="90" stroke="#3b82f6" stroke-width="2"/>
+        <line x1="760" y1="90" x2="780" y2="90" stroke="#3b82f6" stroke-width="2"/>
+
+        <line x1="130" y1="140" x2="130" y2="180" stroke="#10b981" stroke-width="2"/>
+        <line x1="380" y1="140" x2="430" y2="180" stroke="#10b981" stroke-width="2"/>
+        <line x1="640" y1="140" x2="430" y2="180" stroke="#10b981" stroke-width="2"/>
+        <line x1="910" y1="140" x2="430" y2="180" stroke="#10b981" stroke-width="2"/>
+        <line x1="130" y1="140" x2="710" y2="180" stroke="#10b981" stroke-width="2"/>
+      </svg>
+      <p style="margin-top: 12px;">Also present: <strong>sources</strong> (ingestion source registry), <strong>schema_migrations</strong>, and supporting indexes.</p>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <h3>What is working now</h3>
+        <ul>
+          <li>Scheduled ingestion and processing pipelines</li>
+          <li>API contracts for summary + series + route + laps + insights</li>
+          <li>Front-end components wired to live data + trend routes</li>
+          <li>Route map rendering on activity detail</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Key gaps before production</h3>
+        <ul>
+          <li>Security hardening + JWT rotation + rate limits</li>
+          <li>Data integrity constraints and DB migration strategy</li>
+          <li>Observability + alerting on pipeline failures</li>
+          <li>CI/CD pipeline to AWS with staging</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Built with FastAPI, SQLite, and React. Next step: hardening for production, adding more data sources, and shipping as a PWA.
+  </footer>
+</body>
+</html>
