@@ -6,6 +6,7 @@ import Profile from './screens/Profile.jsx';
 import InsightTrend from './screens/InsightTrend.jsx';
 import Insights from './screens/Insights.jsx';
 import Performance from './screens/Performance.jsx';
+import Login from './screens/Login.jsx';
 import { overviewContract, activityDetailContract, activitiesContract, profileContract } from './contracts.js';
 
 const API_BASE = '/api/v1';
@@ -13,6 +14,8 @@ const API_BASE = '/api/v1';
 export default function App() {
   const isDev = import.meta?.env?.DEV;
   const prevPathRef = useRef(null);
+  const authRedirectRef = useRef(null);
+  const currentPathRef = useRef(null);
   const [routePath, setRoutePath] = useState(
     typeof window !== 'undefined' ? `${window.location.pathname}${window.location.search}` : '/dashboard'
   );
@@ -21,6 +24,14 @@ export default function App() {
   const emptyOverview = { weekLabel: '—', weekStart: null, allTimeCards: [], weeklyCards: [], insights: [], performance: [] };
   const emptyActivity = { ...activityDetailContract, heroStats: [], tabs: ['Overview', 'Laps', 'Charts'], laps: [] };
   const emptyActivities = { title: 'Activities', filterLabel: 'All activities', items: [] };
+  const tokenKey = 'fitness_token';
+  const [authToken, setAuthToken] = useState(() => {
+    if (typeof window === 'undefined') return null;
+    return window.localStorage.getItem(tokenKey);
+  });
+  const [authRequired, setAuthRequired] = useState(false);
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState(null);
   const [overviewData, setOverviewData] = useState(isDev ? overviewContract : emptyOverview);
   const [activityList, setActivityList] = useState([]);
   const [activeActivity, setActiveActivity] = useState(isDev ? activityDetailContract : emptyActivity);
@@ -59,6 +70,62 @@ export default function App() {
     navigate('/activities');
   }, [navigate]);
 
+  const saveToken = useCallback((token) => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(tokenKey, token);
+    }
+    setAuthToken(token);
+    setAuthRequired(false);
+    setAuthError(null);
+  }, [tokenKey]);
+
+  const clearToken = useCallback((message = null) => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem(tokenKey);
+    }
+    setAuthToken(null);
+    setAuthRequired(true);
+    if (message) setAuthError(message);
+  }, [tokenKey]);
+
+  const apiFetch = useCallback(async (path, options = {}) => {
+    const headers = new Headers(options.headers || {});
+    if (authToken) headers.set('Authorization', `Bearer ${authToken}`);
+    const url = path.startsWith('http') ? path : `${API_BASE}${path}`;
+    const res = await fetch(url, { ...options, headers });
+    if (res.status === 401) {
+      clearToken('Please sign in to continue.');
+      throw new Error('unauthorized');
+    }
+    return res;
+  }, [authToken, clearToken]);
+
+  const handleLogin = useCallback(async (username, password) => {
+    setAuthLoading(true);
+    setAuthError(null);
+    try {
+      const res = await fetch(`${API_BASE}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+      if (!res.ok) {
+        throw new Error('invalid');
+      }
+      const json = await res.json();
+      if (!json?.access_token) throw new Error('invalid');
+      saveToken(json.access_token);
+      const target = authRedirectRef.current || '/dashboard';
+      authRedirectRef.current = null;
+      navigate(target);
+      setScreen(target.startsWith('/activities') ? 'activities' : 'overview');
+    } catch {
+      setAuthError('Invalid username or password.');
+    } finally {
+      setAuthLoading(false);
+    }
+  }, [navigate, saveToken]);
+
   const applyActivityFilter = useCallback((type, range, startOverride = null, endOverride = null) => {
     const weekStart = overviewData.weekStart || null;
     const weekRange = weekStart ? buildWeekRange(weekStart) : null;
@@ -85,7 +152,7 @@ export default function App() {
     setActivityLoading(true);
     setActivityError(null);
     try {
-      const json = await fetchActivitiesPage(activityFilter, offset, PAGE_SIZE);
+      const json = await fetchActivitiesPage(apiFetch, activityFilter, offset, PAGE_SIZE);
       const activities = json.activities || [];
       const merged = append ? [...activityList, ...activities] : activities;
       setActivityList(merged);
@@ -103,7 +170,7 @@ export default function App() {
     } finally {
       setActivityLoading(false);
     }
-  }, [activityFilter, activityList]);
+  }, [activityFilter, activityList, apiFetch]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -113,12 +180,30 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    currentPathRef.current = routePath;
+  }, [routePath]);
+
+  useEffect(() => {
+    if (!authRequired) return;
+    if (routePath !== '/login') {
+      authRedirectRef.current = routePath;
+      navigate('/login');
+      setScreen('login');
+    }
+  }, [authRequired, routePath, navigate]);
+
+  useEffect(() => {
     const url = typeof window !== 'undefined' ? new URL(routePath || '/dashboard', window.location.origin) : null;
     const path = url?.pathname || '/dashboard';
     const params = url?.searchParams;
     if (path === '/' || path === '/dashboard') {
       setPreviousScreen('overview');
       setScreen('overview');
+      return;
+    }
+    if (path === '/login') {
+      setPreviousScreen('overview');
+      setScreen('login');
       return;
     }
     if (path.startsWith('/activities')) {
@@ -197,23 +282,23 @@ export default function App() {
       setOverviewLoading(true);
       setOverviewError(null);
       try {
-        const healthRes = await fetch(`${API_BASE}/health`);
+        const healthRes = await apiFetch('/health');
         const healthJson = await healthRes.json();
         setLastUpdate(formatLastUpdate(healthJson.last_update));
 
-        const weeklyRes = await fetch(`${API_BASE}/weekly?limit=4`);
+        const weeklyRes = await apiFetch('/weekly?limit=4');
         const weeklyJson = await weeklyRes.json();
         const weekly = weeklyJson.weekly || [];
 
         const weekStart = weekly[0]?.week || null;
         const weekRange = weekStart ? buildWeekRange(weekStart) : null;
 
-        const totalsAllRes = await fetch(`${API_BASE}/activity_totals`);
+        const totalsAllRes = await apiFetch('/activity_totals');
         const totalsAllJson = await totalsAllRes.json();
-        const totalsWeekRes = weekRange ? await fetch(`${API_BASE}/activity_totals?start=${encodeURIComponent(weekRange.start)}&end=${encodeURIComponent(weekRange.end)}`) : null;
+        const totalsWeekRes = weekRange ? await apiFetch(`/activity_totals?start=${encodeURIComponent(weekRange.start)}&end=${encodeURIComponent(weekRange.end)}`) : null;
         const totalsWeekJson = totalsWeekRes ? await totalsWeekRes.json() : { totals: [] };
 
-        const insightsRes = await fetch(`${API_BASE}/insights`);
+        const insightsRes = await apiFetch('/insights');
         const insightsJson = await insightsRes.json();
         const { insights, performance } = buildInsights(insightsJson);
         setOverviewData(buildOverview(weekly, totalsAllJson.totals || [], totalsWeekJson.totals || [], insights, performance));
@@ -225,7 +310,7 @@ export default function App() {
       }
     };
     load();
-  }, []);
+  }, [apiFetch, isDev]);
 
   useEffect(() => {
     if (!activeId) return;
@@ -233,19 +318,19 @@ export default function App() {
       setDetailLoading(true);
       setDetailError(null);
       try {
-        const res = await fetch(`${API_BASE}/activity/${activeId}`);
+        const res = await apiFetch(`/activity/${activeId}`);
         const detail = await res.json();
-        const summaryRes = await fetch(`${API_BASE}/activity/${activeId}/summary`);
+        const summaryRes = await apiFetch(`/activity/${activeId}/summary`);
         const summary = await summaryRes.json();
-        const seriesRes = await fetch(`${API_BASE}/activity/${activeId}/series`);
+        const seriesRes = await apiFetch(`/activity/${activeId}/series`);
         const series = await seriesRes.json();
-        const routeRes = await fetch(`${API_BASE}/activity/${activeId}/route`);
+        const routeRes = await apiFetch(`/activity/${activeId}/route`);
         const route = await routeRes.json();
-        const lapsRes = await fetch(`${API_BASE}/activity/${activeId}/laps`);
+        const lapsRes = await apiFetch(`/activity/${activeId}/laps`);
         const lapsJson = await lapsRes.json();
-        const activitySegmentsRes = await fetch(`${API_BASE}/activity/${activeId}/segments`);
+        const activitySegmentsRes = await apiFetch(`/activity/${activeId}/segments`);
         const activitySegments = await activitySegmentsRes.json();
-        const segmentsRes = await fetch(`${API_BASE}/segments_best`);
+        const segmentsRes = await apiFetch(`/segments_best`);
         const segments = await segmentsRes.json();
         setActiveActivity(buildActivityDetail(detail, summary, lapsJson.laps || [], series.series || {}, route.route || [], segments, activitySegments.segments || {}));
       } catch {
@@ -257,7 +342,7 @@ export default function App() {
       }
     };
     loadDetail();
-  }, [activeId]);
+  }, [activeId, apiFetch, isDev]);
 
   useEffect(() => {
     if (screen !== 'activities') return;
@@ -361,14 +446,24 @@ export default function App() {
         <InsightTrend
           insight={activeInsight}
           onBack={goBack}
+          apiFetch={apiFetch}
+        />
+      )}
+      {screen === 'login' && (
+        <Login
+          onSubmit={handleLogin}
+          loading={authLoading}
+          error={authError}
         />
       )}
       {screen === 'profile' && <Profile contract={profileData} />}
-      <nav className="bottom-nav">
-        <button className={`nav-item ${screen === 'overview' ? 'is-active' : ''}`} type="button" onClick={() => { setPreviousScreen('overview'); navigate('/dashboard'); }}>Home</button>
-        <button className={`nav-item ${screen === 'activities' ? 'is-active' : ''}`} type="button" onClick={() => { setPreviousScreen('activities'); navigate('/activities'); }}>Activities</button>
-        <button className={`nav-item ${screen === 'profile' ? 'is-active' : ''}`} type="button" onClick={() => { setPreviousScreen('profile'); navigate('/profile'); }}>Profile</button>
-      </nav>
+      {screen !== 'login' && (
+        <nav className="bottom-nav">
+          <button className={`nav-item ${screen === 'overview' ? 'is-active' : ''}`} type="button" onClick={() => { setPreviousScreen('overview'); navigate('/dashboard'); }}>Home</button>
+          <button className={`nav-item ${screen === 'activities' ? 'is-active' : ''}`} type="button" onClick={() => { setPreviousScreen('activities'); navigate('/activities'); }}>Activities</button>
+          <button className={`nav-item ${screen === 'profile' ? 'is-active' : ''}`} type="button" onClick={() => { setPreviousScreen('profile'); navigate('/profile'); }}>Profile</button>
+        </nav>
+      )}
     </div>
   );
 }
@@ -712,14 +807,14 @@ function buildWeekRange(weekStart) {
   };
 }
 
-async function fetchActivitiesPage(filter, offset, limit) {
+async function fetchActivitiesPage(apiFetch, filter, offset, limit) {
   const params = new URLSearchParams();
   params.set('type', filter.type);
   params.set('limit', String(limit));
   params.set('offset', String(offset));
   if (filter.start) params.set('start', filter.start);
   if (filter.end) params.set('end', filter.end);
-  const res = await fetch(`${API_BASE}/activities?${params.toString()}`);
+  const res = await apiFetch(`/activities?${params.toString()}`);
   return res.json();
 }
 

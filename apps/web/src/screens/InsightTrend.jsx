@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import ChartCard from '../components/ChartCard.jsx';
 
-export default function InsightTrend({ insight, onBack }) {
+export default function InsightTrend({ insight, onBack, apiFetch }) {
   const [series, setSeries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -11,7 +11,10 @@ export default function InsightTrend({ insight, onBack }) {
     if (!insight?.id) return;
     setLoading(true);
     setError(null);
-    fetch(`/api/v1/insights/series?metric=${encodeURIComponent(insight.id)}&weeks=52`)
+    const fetcher = apiFetch
+      ? () => apiFetch(`/insights/series?metric=${encodeURIComponent(insight.id)}&weeks=52`)
+      : () => fetch(`/api/v1/insights/series?metric=${encodeURIComponent(insight.id)}&weeks=52`);
+    fetcher()
       .then((r) => r.json())
       .then((data) => {
         setSeries(data.series || []);
