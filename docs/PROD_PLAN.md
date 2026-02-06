@@ -44,7 +44,12 @@ This is a parkable, staged plan to take the fitness-platform from local/dev to p
 - Performance budgets + caching
 
 ## Phase 7 — Deployment & ops
-- CI/CD pipeline with artifacts + rollback
+- CI/CD pipeline (GitHub Actions + AWS OIDC)
 - Staging environment
 - Infra as code (Terraform)
 - Runbooks + alerts
+
+### AWS Free Tier deployment (target)
+- EC2 t3.micro running Docker Compose (API + worker + web + caddy)
+- RDS Postgres (free tier) for primary DB
+- GitHub Actions deploys via AWS OIDC + SSM run-command
