@@ -8,6 +8,17 @@ class DBMissingResponse(BaseModel):
     db: Optional[str] = None
 
 
+class ErrorDetail(BaseModel):
+    code: str
+    message: str
+    request_id: Optional[str] = None
+    details: Optional[Dict[str, Any]] = None
+
+
+class ErrorResponse(BaseModel):
+    error: ErrorDetail
+
+
 class PipelineRun(BaseModel):
     id: Optional[int] = None
     started_at: Optional[str] = None

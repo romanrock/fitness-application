@@ -1,13 +1,13 @@
 import secrets
-import sqlite3
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, Request, status
 
-from packages.config import DB_PATH, REFRESH_ENABLED, REFRESH_TTL_DAYS
+from packages.config import REFRESH_ENABLED, REFRESH_TTL_DAYS
 from ..auth import create_token, verify_password
 from ..rate_limit import check_rate_limit
 from ..schemas import LoginRequest, LoginResponse, RefreshRequest
+from ..utils import get_db
 
 
 router = APIRouter()
@@ -28,7 +28,7 @@ def login(payload: LoginRequest, request: Request):
     if not check_rate_limit(f"login:{client_host}", limit=5, window_sec=600):
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many attempts")
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_db() as conn:
         cur = conn.cursor()
         cur.execute("SELECT id, password_hash FROM users WHERE username=?", (username,))
         row = cur.fetchone()
@@ -53,7 +53,7 @@ def refresh(payload: RefreshRequest):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Refresh tokens disabled")
     token = payload.refresh_token
     now = datetime.now(timezone.utc)
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
             """

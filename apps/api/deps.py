@@ -1,9 +1,9 @@
-import sqlite3
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from packages.config import AUTH_DISABLED, DB_PATH
+from packages.config import AUTH_DISABLED
 from .auth import decode_token, hash_password
+from .utils import get_db
 
 
 auth_scheme = HTTPBearer(auto_error=False)
@@ -11,7 +11,7 @@ auth_scheme = HTTPBearer(auto_error=False)
 
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(auth_scheme)):
     if AUTH_DISABLED:
-        with sqlite3.connect(DB_PATH) as conn:
+        with get_db() as conn:
             cur = conn.cursor()
             cur.execute("SELECT id, username FROM users ORDER BY id LIMIT 1")
             row = cur.fetchone()

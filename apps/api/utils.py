@@ -1,8 +1,20 @@
 import datetime
 import json
+import sqlite3
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from packages.config import DB_PATH, LAST_UPDATE_PATH
+
+
+def get_db() -> sqlite3.Connection:
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=5000")
+    except sqlite3.OperationalError:
+        pass
+    return conn
 
 
 def db_exists() -> bool:

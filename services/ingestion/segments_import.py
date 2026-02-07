@@ -13,6 +13,7 @@ def configure_sqlite(conn):
     try:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA busy_timeout=5000")
+        conn.execute("PRAGMA foreign_keys=ON")
     except sqlite3.OperationalError:
         return
 

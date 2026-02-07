@@ -3,13 +3,32 @@ from pathlib import Path
 import sys
 import threading
 import time
+import sqlite3
+from datetime import datetime, timedelta, timezone
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from packages.config import DB_PATH, REFRESH_SECONDS, RUN_STRAVA_SYNC, STRAVA_LOCAL_PATH
+from packages.config import (
+    DB_PATH,
+    REFRESH_SECONDS,
+    RUN_STRAVA_SYNC,
+    STRAVA_LOCAL_PATH,
+    PIPELINE_MAX_RETRIES,
+    PIPELINE_BACKOFF_BASE_SEC,
+    PIPELINE_BACKOFF_MAX_SEC,
+    PIPELINE_FAIL_THRESHOLD,
+    PIPELINE_COOLDOWN_SEC,
+)
 from packages.pipeline_lock import pipeline_lock
+from packages.job_state import (
+    load_job_state,
+    update_job_state,
+    start_job_run,
+    finish_job_run,
+    record_dead_letter,
+)
 
 
 def run(cmd, cwd=None):
@@ -53,12 +72,99 @@ def run_pipeline_once():
         print("Pipeline complete")
 
 
-def schedule_pipeline(stop_event: threading.Event):
-    while not stop_event.is_set():
+def _backoff_seconds(attempt: int) -> float:
+    base = PIPELINE_BACKOFF_BASE_SEC * (2 ** max(attempt - 1, 0))
+    return min(base, PIPELINE_BACKOFF_MAX_SEC)
+
+
+def _run_with_retries() -> tuple[bool, str | None, int]:
+    attempts = 0
+    last_error = None
+    for attempt in range(1, PIPELINE_MAX_RETRIES + 2):
+        attempts = attempt
         try:
             run_pipeline_once()
+            return True, None, attempts
         except subprocess.CalledProcessError as exc:
-            print(f"Pipeline failed: {exc}")
+            last_error = str(exc)
+            if attempt <= PIPELINE_MAX_RETRIES:
+                delay = _backoff_seconds(attempt)
+                print(f"Pipeline attempt {attempt} failed; retrying in {delay:.1f}s")
+                time.sleep(delay)
+    return False, last_error, attempts
+
+
+def _should_skip_for_cooldown() -> bool:
+    if not DB_PATH.exists():
+        return False
+    with sqlite3.connect(DB_PATH) as conn:
+        state = load_job_state(conn, "pipeline")
+        if state.cooldown_until:
+            try:
+                until = datetime.fromisoformat(state.cooldown_until)
+            except ValueError:
+                return False
+            if datetime.now(timezone.utc) < until:
+                remaining = (until - datetime.now(timezone.utc)).total_seconds()
+                print(f"Pipeline cooldown active; skipping for {remaining:.0f}s.")
+                return True
+    return False
+
+
+def _record_job_state(success: bool, error: str | None, attempts: int, started_at: datetime, finished_at: datetime) -> None:
+    if not DB_PATH.exists():
+        return
+    with sqlite3.connect(DB_PATH) as conn:
+        state = load_job_state(conn, "pipeline")
+        consecutive_failures = state.consecutive_failures
+        cooldown_until = state.cooldown_until
+        status = "ok" if success else "error"
+        if success:
+            consecutive_failures = 0
+            cooldown_until = None
+        else:
+            consecutive_failures += 1
+            if consecutive_failures >= PIPELINE_FAIL_THRESHOLD:
+                cooldown_until = (datetime.now(timezone.utc) + timedelta(seconds=PIPELINE_COOLDOWN_SEC)).isoformat()
+                record_dead_letter(conn, "pipeline", error, attempts, status)
+        update_job_state(
+            conn,
+            "pipeline",
+            consecutive_failures,
+            cooldown_until,
+            started_at.isoformat(),
+            finished_at.isoformat(),
+            status,
+            error,
+        )
+
+
+def schedule_pipeline(stop_event: threading.Event):
+    while not stop_event.is_set():
+        if _should_skip_for_cooldown():
+            time.sleep(5)
+            continue
+        started_at = datetime.now(timezone.utc)
+        run_id = None
+        if DB_PATH.exists():
+            with sqlite3.connect(DB_PATH) as conn:
+                run_id = start_job_run(conn, "pipeline")
+        try:
+            success, error, attempts = _run_with_retries()
+        except subprocess.CalledProcessError as exc:
+            success, error, attempts = False, str(exc), PIPELINE_MAX_RETRIES + 1
+        finished_at = datetime.now(timezone.utc)
+        if run_id and DB_PATH.exists():
+            with sqlite3.connect(DB_PATH) as conn:
+                finish_job_run(
+                    conn,
+                    run_id,
+                    "ok" if success else "error",
+                    attempts,
+                    error,
+                    (finished_at - started_at).total_seconds(),
+                )
+        _record_job_state(success, error, attempts, started_at, finished_at)
         for _ in range(REFRESH_SECONDS):
             if stop_event.is_set():
                 return
@@ -72,10 +178,29 @@ def manual_trigger(stop_event: threading.Event):
         except EOFError:
             return
         if cmd in ("r", "run"):
+            if _should_skip_for_cooldown():
+                continue
+            started_at = datetime.now(timezone.utc)
+            run_id = None
+            if DB_PATH.exists():
+                with sqlite3.connect(DB_PATH) as conn:
+                    run_id = start_job_run(conn, "pipeline")
             try:
-                run_pipeline_once()
+                success, error, attempts = _run_with_retries()
             except subprocess.CalledProcessError as exc:
-                print(f"Pipeline failed: {exc}")
+                success, error, attempts = False, str(exc), PIPELINE_MAX_RETRIES + 1
+            finished_at = datetime.now(timezone.utc)
+            if run_id and DB_PATH.exists():
+                with sqlite3.connect(DB_PATH) as conn:
+                    finish_job_run(
+                        conn,
+                        run_id,
+                        "ok" if success else "error",
+                        attempts,
+                        error,
+                        (finished_at - started_at).total_seconds(),
+                    )
+            _record_job_state(success, error, attempts, started_at, finished_at)
 
 
 def main():

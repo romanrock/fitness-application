@@ -138,9 +138,12 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
 
 CREATE INDEX IF NOT EXISTS idx_activities_user_start_time ON activities(user_id, start_time);
 CREATE INDEX IF NOT EXISTS idx_activities_activity_type ON activities(activity_type);
+CREATE INDEX IF NOT EXISTS idx_activities_raw_user_activity ON activities_raw(user_id, activity_id);
 CREATE INDEX IF NOT EXISTS idx_streams_raw_user_activity ON streams_raw(user_id, activity_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_weather_raw_user_activity_unique ON weather_raw(user_id, activity_id);
 CREATE INDEX IF NOT EXISTS idx_weather_raw_user_activity ON weather_raw(user_id, activity_id);
 CREATE INDEX IF NOT EXISTS idx_activities_calc_user_activity ON activities_calc(user_id, activity_id);
+CREATE INDEX IF NOT EXISTS idx_activities_norm_activity ON activities_norm(activity_id);
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user ON refresh_tokens(user_id);
 
 -- metrics_weekly is now a VIEW created by migrations.

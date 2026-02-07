@@ -7,3 +7,10 @@ def test_versioned_health_routes_exist():
     assert "/api/health" in paths
     assert "/api/v1/health" in paths
     assert "/api/v1/activities" in paths
+
+
+def test_openapi_includes_versioned_paths():
+    schema = app.openapi()
+    paths = schema.get("paths", {})
+    assert "/api/v1/health" in paths
+    assert "/api/v1/activities" in paths

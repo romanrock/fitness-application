@@ -2,9 +2,8 @@ import sqlite3
 
 from fastapi import APIRouter
 
-from packages.config import DB_PATH
 from ..schemas import HealthResponse
-from ..utils import db_exists, get_last_update
+from ..utils import db_exists, get_last_update, get_db
 
 
 router = APIRouter()
@@ -15,7 +14,7 @@ def health():
     last_update = get_last_update()
     pipeline = None
     if db_exists():
-        with sqlite3.connect(DB_PATH) as conn:
+        with get_db() as conn:
             cur = conn.cursor()
             try:
                 cur.execute(

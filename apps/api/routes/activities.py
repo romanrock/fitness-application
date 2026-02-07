@@ -1,11 +1,9 @@
 import json
 import os
-import sqlite3
 from typing import Any, Dict, List
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 
-from packages.config import DB_PATH
 from ..cache import get_or_set
 from ..deps import get_current_user
 from ..schemas import (
@@ -20,7 +18,7 @@ from ..schemas import (
     SummaryResponse,
     WeeklyResponse,
 )
-from ..utils import build_date_filter, db_exists, decode_polyline, dict_rows, get_last_update
+from ..utils import build_date_filter, db_exists, decode_polyline, dict_rows, get_last_update, get_db
 
 
 router_public = APIRouter()
@@ -34,7 +32,7 @@ MAX_ACTIVITIES_LIMIT = 200
 def stats(user=Depends(get_current_user)):
     if not db_exists():
         return {"db": "missing"}
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_db() as conn:
         cur = conn.cursor()
         cur.execute("SELECT COUNT(*) FROM activities_raw WHERE user_id=?", (user["id"],))
         activities = cur.fetchone()[0]
@@ -54,7 +52,7 @@ def weekly(limit: int = 52, user=Depends(get_current_user)):
     cache_key = f"weekly:{user['id']}:{limit}"
 
     def compute():
-        with sqlite3.connect(DB_PATH) as conn:
+        with get_db() as conn:
             cur = conn.cursor()
             cur.execute(
                 """
@@ -86,7 +84,7 @@ def activities(
     if not db_exists():
         return {"db": "missing"}
     limit = max(1, min(MAX_ACTIVITIES_LIMIT, limit))
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_db() as conn:
         cur = conn.cursor()
         date_clause, date_params = build_date_filter(start, end)
         cur.execute(
@@ -129,7 +127,7 @@ def activity_totals(start: str | None = None, end: str | None = None, user=Depen
     cache_key = f"totals:{user['id']}:{start}:{end}"
 
     def compute():
-        with sqlite3.connect(DB_PATH) as conn:
+        with get_db() as conn:
             cur = conn.cursor()
             date_clause, date_params = build_date_filter(start, end)
             cur.execute(
@@ -153,7 +151,7 @@ def activity_totals(start: str | None = None, end: str | None = None, user=Depen
 def activity_detail(activity_id: str, user=Depends(get_current_user)):
     if not db_exists():
         return {"db": "missing"}
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
             """
@@ -184,7 +182,7 @@ def activity_detail(activity_id: str, user=Depends(get_current_user)):
         )
         row = cur.fetchone()
         if not row:
-            return {"error": "not_found"}
+            raise HTTPException(status_code=404, detail="not_found")
         cols = [c[0] for c in cur.description]
         data = {cols[i]: row[i] for i in range(len(cols))}
         # Add weather context when available.
@@ -209,7 +207,7 @@ def activity_streams(activity_id: str, types: str = "time,distance,heartrate,cad
     want = {t.strip() for t in types.split(",") if t.strip()}
     if not want:
         return {"streams": {}}
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
             "SELECT stream_type, raw_json FROM streams_raw WHERE activity_id=? AND user_id=?",
@@ -234,7 +232,7 @@ def activity_streams(activity_id: str, types: str = "time,distance,heartrate,cad
 def activity_laps(activity_id: str, lap_m: int = 1000, user=Depends(get_current_user)):
     if not db_exists():
         return {"db": "missing"}
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
             "SELECT raw_json FROM streams_raw WHERE activity_id=? AND stream_type='distance' AND user_id=?",
@@ -339,7 +337,7 @@ def activity_laps(activity_id: str, lap_m: int = 1000, user=Depends(get_current_
 def activity_summary(activity_id: str, user=Depends(get_current_user)):
     if not db_exists():
         return {"db": "missing"}
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
             "SELECT DISTINCT stream_type FROM streams_raw WHERE activity_id=? AND user_id=?",
@@ -377,7 +375,7 @@ def activity_summary(activity_id: str, user=Depends(get_current_user)):
         )
         row = cur.fetchone()
         if not row:
-            return {"error": "not_found"}
+            raise HTTPException(status_code=404, detail="not_found")
         raw = {}
         if row[0]:
             try:
@@ -478,7 +476,7 @@ def activity_summary(activity_id: str, user=Depends(get_current_user)):
 def activity_series(activity_id: str, downsample: int = 5, user=Depends(get_current_user)):
     if not db_exists():
         return {"db": "missing"}
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
             "SELECT raw_json FROM streams_raw WHERE activity_id=? AND stream_type='time' AND user_id=?",
@@ -613,7 +611,7 @@ def activity_series(activity_id: str, downsample: int = 5, user=Depends(get_curr
 def activity_route(activity_id: str, downsample: int = 5, user=Depends(get_current_user)):
     if not db_exists():
         return {"db": "missing"}
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
             "SELECT raw_json FROM streams_raw WHERE activity_id=? AND stream_type='latlng' AND user_id=?",

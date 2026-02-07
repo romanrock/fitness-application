@@ -7,7 +7,6 @@ import InsightTrend from './screens/InsightTrend.jsx';
 import Insights from './screens/Insights.jsx';
 import Performance from './screens/Performance.jsx';
 import Login from './screens/Login.jsx';
-import { overviewContract, activityDetailContract, activitiesContract, profileContract } from './contracts.js';
 
 const API_BASE = '/api/v1';
 
@@ -16,13 +15,26 @@ export default function App() {
   const prevPathRef = useRef(null);
   const authRedirectRef = useRef(null);
   const currentPathRef = useRef(null);
+  const syncTriggeredRef = useRef(false);
   const [routePath, setRoutePath] = useState(
     typeof window !== 'undefined' ? `${window.location.pathname}${window.location.search}` : '/dashboard'
   );
   const [screen, setScreen] = useState('overview');
   const [previousScreen, setPreviousScreen] = useState('overview');
   const emptyOverview = { weekLabel: '—', weekStart: null, allTimeCards: [], weeklyCards: [], insights: [], performance: [] };
-  const emptyActivity = { ...activityDetailContract, heroStats: [], tabs: ['Overview', 'Laps', 'Charts'], laps: [] };
+  const emptyActivity = {
+    activityId: null,
+    name: '',
+    subtitle: '',
+    weather: null,
+    heroStats: [],
+    tabs: ['Overview', 'Laps', 'Charts'],
+    overview: [],
+    charts: { pace: null, hr: null, cadence: null, elevation: null },
+    laps: [],
+    lapTotals: null,
+    segments: null
+  };
   const emptyActivities = { title: 'Activities', filterLabel: 'All activities', items: [] };
   const tokenKey = 'fitness_token';
   const [authToken, setAuthToken] = useState(() => {
@@ -32,13 +44,13 @@ export default function App() {
   const [authRequired, setAuthRequired] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState(null);
-  const [overviewData, setOverviewData] = useState(isDev ? overviewContract : emptyOverview);
+  const [overviewData, setOverviewData] = useState(emptyOverview);
   const [activityList, setActivityList] = useState([]);
-  const [activeActivity, setActiveActivity] = useState(isDev ? activityDetailContract : emptyActivity);
+  const [activeActivity, setActiveActivity] = useState(emptyActivity);
   const [activeInsight, setActiveInsight] = useState(null);
   const [activeId, setActiveId] = useState(null);
   const [lastUpdate, setLastUpdate] = useState(null);
-  const [activitiesData, setActivitiesData] = useState(isDev ? activitiesContract : emptyActivities);
+  const [activitiesData, setActivitiesData] = useState(emptyActivities);
   const [activityFilter, setActivityFilter] = useState({ type: 'run', range: 'all', start: null, end: null, label: 'All activities' });
   const [activityOffset, setActivityOffset] = useState(0);
   const [activityHasMore, setActivityHasMore] = useState(true);
@@ -48,7 +60,13 @@ export default function App() {
   const [overviewError, setOverviewError] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState(null);
-  const [profileData] = useState(profileContract);
+  const [profileData] = useState({
+    name: '',
+    age: null,
+    height_cm: null,
+    weight_kg: null,
+    resting_hr: null
+  });
 
   const navigate = useCallback((path) => {
     if (typeof window === 'undefined') return;
@@ -161,11 +179,7 @@ export default function App() {
       setActivityHasMore(activities.length === PAGE_SIZE);
     } catch {
       setActivityError('Failed to load activities.');
-      if (isDev) {
-        setActivitiesData({ ...activitiesContract, items: [], filterLabel: activityFilter.label });
-      } else {
-        setActivitiesData({ ...emptyActivities, items: [], filterLabel: activityFilter.label });
-      }
+      setActivitiesData({ ...emptyActivities, items: [], filterLabel: activityFilter.label });
       setActivityHasMore(false);
     } finally {
       setActivityLoading(false);
@@ -178,6 +192,14 @@ export default function App() {
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);
+
+  useEffect(() => {
+    if (syncTriggeredRef.current) return;
+    if (authRequired) return;
+    if (!authToken && !isDev) return;
+    syncTriggeredRef.current = true;
+    apiFetch('/sync', { method: 'POST' }).catch(() => {});
+  }, [authRequired, authToken, apiFetch, isDev]);
 
   useEffect(() => {
     currentPathRef.current = routePath;

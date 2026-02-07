@@ -1,11 +1,8 @@
-import sqlite3
-
 from fastapi import APIRouter, Depends
 
-from packages.config import DB_PATH
 from ..deps import get_current_user
 from ..schemas import ActivitySegmentsResponse, SegmentsBestResponse
-from ..utils import db_exists
+from ..utils import db_exists, get_db
 
 
 router = APIRouter()
@@ -15,7 +12,7 @@ router = APIRouter()
 def segments_best(user=Depends(get_current_user)):
     if not db_exists():
         return {"db": "missing"}
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
             """
@@ -42,7 +39,7 @@ def segments_best(user=Depends(get_current_user)):
 def activity_segments(activity_id: str, user=Depends(get_current_user)):
     if not db_exists():
         return {"db": "missing"}
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
             """

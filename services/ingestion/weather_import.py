@@ -17,6 +17,7 @@ def configure_sqlite(conn):
     try:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA busy_timeout=5000")
+        conn.execute("PRAGMA foreign_keys=ON")
     except sqlite3.OperationalError:
         return
 
@@ -35,7 +36,12 @@ def import_weather(conn):
         activity_id = p.stem
         raw_json = p.read_text()
         cur.execute(
-            "INSERT OR IGNORE INTO weather_raw(activity_id, raw_json, user_id) VALUES(?,?,?)",
+            """
+            INSERT INTO weather_raw(activity_id, raw_json, user_id)
+            VALUES(?,?,?)
+            ON CONFLICT(user_id, activity_id) DO UPDATE SET
+              raw_json=excluded.raw_json
+            """,
             (activity_id, raw_json, user_id),
         )
         count += 1

@@ -72,6 +72,17 @@ def test_http_endpoints_live():
 
             series = fetch_json("http://127.0.0.1:8002/api/v1/insights/series?metric=volume&weeks=12")
             assert series.get("series")
+
+            # Error model should be consistent
+            try:
+                fetch_json("http://127.0.0.1:8002/api/v1/activity/NOPE/summary")
+                assert False, "Expected 404"
+            except urllib.error.HTTPError as err:
+                body = json.loads(err.read().decode("utf-8"))
+                assert err.code == 404
+                assert "error" in body
+                assert body["error"]["code"] == "http_404"
+                assert isinstance(body["error"]["message"], str)
         finally:
             proc.terminate()
             try:

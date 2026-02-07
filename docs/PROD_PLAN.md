@@ -19,16 +19,31 @@ This is a parkable, staged plan to take the fitness-platform from local/dev to p
 - Idempotent ingestion (safe replays)
 - Migration rollback plan
 - Move off SQLite for prod (Postgres)
+  - Phase 2 work started: weather_raw de-dupe + unique index, raw/normalized lookup indexes
+  - Added DB integrity check script + foreign key enforcement on connections
+  - Rollback guide documented in docs/ROLLBACK.md
+  - Raw/stream ingestion now upserts to stay idempotent on replays
 
 ## Phase 3 — Reliability & jobs
 - Worker supervision + retry/backoff + circuit breakers
 - Job scheduling with visibility + dead-letter handling
 - Metrics on ingestion/processing latency and failure rate
+- Strava delta sync (prod)
+  - Replace local `run_all.js` with Strava API polling
+  - Store cursor (`last_activity_at` / `last_activity_id`) in DB
+  - Fetch deltas only on schedule + on app open
+  - Add webhooks for near‑real‑time updates (Strava event subscription)
+    - Verify signature + store events
+    - Trigger ingestion on event
+    - Fallback to low‑frequency poll (safety net)
+  - Note: `run_all.js` remains **local‑only** for backfills; prod uses API polling/webhooks
 
 ## Phase 4 — Observability
 - Structured logs, correlation IDs
 - Metrics (Prometheus/OpenTelemetry)
 - Error reporting (Sentry or similar)
+  - Added request‑ID + structured request logging
+  - Added lightweight `/metrics` endpoint (Prometheus‑style, self‑host friendly)
 
 ## Phase 5 — API quality
 - Versioned API contracts
@@ -37,17 +52,42 @@ This is a parkable, staged plan to take the fitness-platform from local/dev to p
 - API contract tests for activity/summary/series endpoints (protect UI)
 - Deterministic pipeline tests with seeded streams (pace smoothing, zones)
 - Missing-stream warnings surfaced in API responses/logs
+- Performance optimization plan (insights latency)
+  - Measure: add query timing + slow query logging
+  - Data shaping: avoid large JSON in list views, paginate aggressively
+  - Indexes: verify indexes on time/user/activity type for insights
+  - Cache: cache insights payloads with short TTL + invalidate on pipeline run
+  - Pre-aggregation: materialize 7d/28d/12w metrics to avoid heavy recompute
 
 ## Phase 6 — UI + contracts
 - Remove mock data
 - API contract tests (frontend → backend)
 - Performance budgets + caching
 
+## Phase 6.5 — AI assistant groundwork (feature‑flagged, no LLM yet)
+- DB tables: `context_events`, `objective_profiles`, `insight_sessions`
+- Compaction stub: store raw events + rolling summaries
+- API contracts (schemas only):
+  - `GET /insights/daily`
+  - `POST /insights/context`
+  - `POST /insights/evaluate`
+- No UI wiring or LLM calls yet
+
+## Phase 6.6 — AI assistant (post‑hardening)
+- Deterministic default recommendations
+- Context drawer UI + feedback inputs
+- LLM personalization with guardrails
+
 ## Phase 7 — Deployment & ops
 - CI/CD pipeline (GitHub Actions + AWS OIDC)
 - Staging environment
 - Infra as code (Terraform)
 - Runbooks + alerts
+
+## Phase 7.1 — Repo hygiene / cleanup (prep for prod)
+- `.gitignore` hardening: remove/ignore `data/*.db`, WAL/SHM, `exports/`, `.DS_Store`, `__pycache__`, `.pytest_cache`, `.venv/`
+- Remove unused/local‑only artifacts from repo
+- Verify Docker image size + prune dev‑only deps
 
 ### AWS Free Tier deployment (target)
 - EC2 t3.micro running Docker Compose (API + worker + web + caddy)

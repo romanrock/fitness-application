@@ -1,15 +1,13 @@
-import sqlite3
 import time
 import statistics
 from typing import Dict
 
 from fastapi import APIRouter, Depends
 
-from packages.config import DB_PATH
 from ..cache import get_or_set
 from ..deps import get_current_user
 from ..schemas import InsightsResponse, InsightsSeriesResponse
-from ..utils import compute_vdot, db_exists, get_last_update, linear_slope, week_key
+from ..utils import compute_vdot, db_exists, get_db, get_last_update, linear_slope, week_key
 
 
 router = APIRouter()
@@ -30,7 +28,7 @@ def insights(user=Depends(get_current_user)):
         one_year_ago = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - 365 * 24 * 3600))
         days_28_ago = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - 28 * 24 * 3600))
         days_7_ago = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - 7 * 24 * 3600))
-        with sqlite3.connect(DB_PATH) as conn:
+        with get_db() as conn:
             cur = conn.cursor()
 
             # PBs from segments (if available).
@@ -335,7 +333,7 @@ def insights_series(metric: str = "pace_trend", weeks: int = 52, user=Depends(ge
     start_cutoff = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - weeks * 7 * 24 * 3600))
     series = []
     series_meta = None
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_db() as conn:
         cur = conn.cursor()
 
         if metric in {

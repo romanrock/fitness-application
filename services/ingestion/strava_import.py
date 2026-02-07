@@ -20,6 +20,7 @@ def configure_sqlite(conn):
     try:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA busy_timeout=5000")
+        conn.execute("PRAGMA foreign_keys=ON")
     except sqlite3.OperationalError:
         return
 
@@ -53,7 +54,14 @@ def import_activities(conn, source_id, user_id):
         start_time = row.get("start_date")
         raw_json = json.dumps(row)
         cur.execute(
-            "INSERT OR IGNORE INTO activities_raw(source_id, activity_id, start_time, raw_json, user_id) VALUES(?,?,?,?,?)",
+            """
+            INSERT INTO activities_raw(source_id, activity_id, start_time, raw_json, user_id)
+            VALUES(?,?,?,?,?)
+            ON CONFLICT(source_id, activity_id) DO UPDATE SET
+              start_time=excluded.start_time,
+              raw_json=excluded.raw_json,
+              user_id=excluded.user_id
+            """,
             (source_id, activity_id, start_time, raw_json, user_id),
         )
         count += 1
@@ -72,7 +80,13 @@ def import_streams(conn, source_id, user_id):
         for key, payload in data.items():
             raw_json = json.dumps(payload)
             cur.execute(
-                "INSERT OR IGNORE INTO streams_raw(source_id, activity_id, stream_type, raw_json, user_id) VALUES(?,?,?,?,?)",
+                """
+                INSERT INTO streams_raw(source_id, activity_id, stream_type, raw_json, user_id)
+                VALUES(?,?,?,?,?)
+                ON CONFLICT(source_id, activity_id, stream_type) DO UPDATE SET
+                  raw_json=excluded.raw_json,
+                  user_id=excluded.user_id
+                """,
                 (source_id, activity_id, key, raw_json, user_id),
             )
             count += 1
