@@ -8,6 +8,9 @@ cd "$ROOT_DIR"
 echo "[deploy] Pulling latest code..."
 git fetch --all --prune
 git checkout main
+# Clean local generated artifacts that can block pulls.
+rm -f data/fitness.db-shm data/fitness.db-wal data/last_update.json
+git reset --hard
 git pull origin main
 
 echo "[deploy] Building and starting containers..."
