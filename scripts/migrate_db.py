@@ -37,7 +37,7 @@ def apply_migration(conn, path):
     sql = path.read_text()
     conn.executescript(sql)
     conn.execute(
-        "INSERT INTO schema_migrations(filename) VALUES(?)",
+        "INSERT OR IGNORE INTO schema_migrations(filename) VALUES(?)",
         (path.name,),
     )
 

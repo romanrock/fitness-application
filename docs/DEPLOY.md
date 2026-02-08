@@ -29,6 +29,8 @@ Allow inbound:
 - Recreate services:
   - `docker-compose up -d --build caddy worker`
   - `docker-compose up -d --build api` (after `.env` updates or sync logic changes)
+ - Pipeline lock is shared across containers via:
+   - `FITNESS_PIPELINE_LOCK_PATH=/app/data/fitness_pipeline.lock`
 
 ## Worker health
 - Worker uses `RUN_STRAVA_SYNC` and `PYTHONPATH` to avoid missing local ingest artifacts.

@@ -21,6 +21,7 @@ services:
       - STRAVA_EXPIRES_AT=${STRAVA_EXPIRES_AT}
       - FITNESS_PYTHON=python
       - PYTHONPATH=/app
+      - FITNESS_PIPELINE_LOCK_PATH=/app/data/fitness_pipeline.lock
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health').read()\""]
       interval: 30s
@@ -48,6 +49,7 @@ services:
       - STRAVA_ACCESS_TOKEN=${STRAVA_ACCESS_TOKEN}
       - STRAVA_REFRESH_TOKEN=${STRAVA_REFRESH_TOKEN}
       - STRAVA_EXPIRES_AT=${STRAVA_EXPIRES_AT}
+      - FITNESS_PIPELINE_LOCK_PATH=/app/data/fitness_pipeline.lock
     depends_on:
       - api
     healthcheck:
