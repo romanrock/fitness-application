@@ -16,6 +16,7 @@ export default function App() {
   const authRedirectRef = useRef(null);
   const currentPathRef = useRef(null);
   const syncTriggeredRef = useRef(false);
+  const syncInFlightRef = useRef(false);
   const [routePath, setRoutePath] = useState(
     typeof window !== 'undefined' ? `${window.location.pathname}${window.location.search}` : '/dashboard'
   );
@@ -50,6 +51,8 @@ export default function App() {
   const [activeInsight, setActiveInsight] = useState(null);
   const [activeId, setActiveId] = useState(null);
   const [lastUpdate, setLastUpdate] = useState(null);
+  const [lastUpdateRaw, setLastUpdateRaw] = useState(null);
+  const [syncNonce, setSyncNonce] = useState(0);
   const [activitiesData, setActivitiesData] = useState(emptyActivities);
   const [activityFilter, setActivityFilter] = useState({ type: 'run', range: 'all', start: null, end: null, label: 'All activities' });
   const [activityOffset, setActivityOffset] = useState(0);
@@ -106,9 +109,10 @@ export default function App() {
     if (message) setAuthError(message);
   }, [tokenKey]);
 
-  const apiFetch = useCallback(async (path, options = {}) => {
+  const apiFetch = useCallback(async (path, options = {}, tokenOverride = null) => {
     const headers = new Headers(options.headers || {});
-    if (authToken) headers.set('Authorization', `Bearer ${authToken}`);
+    const token = tokenOverride ?? authToken;
+    if (token) headers.set('Authorization', `Bearer ${token}`);
     const url = path.startsWith('http') ? path : `${API_BASE}${path}`;
     const res = await fetch(url, { ...options, headers });
     if (res.status === 401) {
@@ -117,6 +121,41 @@ export default function App() {
     }
     return res;
   }, [authToken, clearToken]);
+
+  const triggerSync = useCallback(async ({ force = false, tokenOverride = null } = {}) => {
+    if (syncInFlightRef.current) return;
+    syncInFlightRef.current = true;
+    try {
+      const suffix = force ? '?force=1' : '';
+      const res = await apiFetch(`/sync${suffix}`, { method: 'POST' }, tokenOverride);
+      let startLast = lastUpdateRaw;
+      try {
+        const payload = await res.json();
+        if (payload?.last_update) startLast = payload.last_update;
+      } catch {
+        // ignore parse errors
+      }
+      const deadline = Date.now() + 60000;
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        try {
+          const healthRes = await apiFetch('/health', {}, tokenOverride);
+          const health = await healthRes.json();
+          if (health?.last_update && health.last_update !== startLast) {
+            setLastUpdateRaw(health.last_update);
+            setLastUpdate(formatLastUpdate(health.last_update));
+            setSyncNonce((value) => value + 1);
+            return;
+          }
+        } catch {
+          // ignore transient errors
+        }
+      }
+      setSyncNonce((value) => value + 1);
+    } finally {
+      syncInFlightRef.current = false;
+    }
+  }, [apiFetch, lastUpdateRaw]);
 
   const handleLogin = useCallback(async (username, password) => {
     setAuthLoading(true);
@@ -133,6 +172,8 @@ export default function App() {
       const json = await res.json();
       if (!json?.access_token) throw new Error('invalid');
       saveToken(json.access_token);
+      syncTriggeredRef.current = false;
+      triggerSync({ force: true, tokenOverride: json.access_token });
       const target = authRedirectRef.current || '/dashboard';
       authRedirectRef.current = null;
       navigate(target);
@@ -142,7 +183,7 @@ export default function App() {
     } finally {
       setAuthLoading(false);
     }
-  }, [navigate, saveToken]);
+  }, [navigate, saveToken, triggerSync]);
 
   const applyActivityFilter = useCallback((type, range, startOverride = null, endOverride = null) => {
     const weekStart = overviewData.weekStart || null;
@@ -198,8 +239,8 @@ export default function App() {
     if (authRequired) return;
     if (!authToken && !isDev) return;
     syncTriggeredRef.current = true;
-    apiFetch('/sync', { method: 'POST' }).catch(() => {});
-  }, [authRequired, authToken, apiFetch, isDev]);
+    triggerSync({ force: false });
+  }, [authRequired, authToken, isDev, triggerSync]);
 
   useEffect(() => {
     currentPathRef.current = routePath;
@@ -306,6 +347,7 @@ export default function App() {
       try {
         const healthRes = await apiFetch('/health');
         const healthJson = await healthRes.json();
+        setLastUpdateRaw(healthJson.last_update || null);
         setLastUpdate(formatLastUpdate(healthJson.last_update));
 
         const weeklyRes = await apiFetch('/weekly?limit=4');
@@ -332,7 +374,7 @@ export default function App() {
       }
     };
     load();
-  }, [apiFetch, isDev]);
+  }, [apiFetch, isDev, syncNonce]);
 
   useEffect(() => {
     if (!activeId) return;
@@ -373,7 +415,7 @@ export default function App() {
     setActivityList([]);
     fetchActivities(0, false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activityFilter, screen]);
+  }, [activityFilter, screen, syncNonce]);
 
   return (
     <div className="app">
