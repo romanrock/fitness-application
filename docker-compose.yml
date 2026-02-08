@@ -33,6 +33,12 @@ services:
       - FITNESS_DB_PATH=/app/data/fitness.db
       - STRAVA_LOCAL_PATH=/app/strava-local-ingest
       - RUN_STRAVA_SYNC=1
+      - STRAVA_API_ENABLED=${STRAVA_API_ENABLED:-0}
+      - STRAVA_CLIENT_ID=${STRAVA_CLIENT_ID}
+      - STRAVA_CLIENT_SECRET=${STRAVA_CLIENT_SECRET}
+      - STRAVA_ACCESS_TOKEN=${STRAVA_ACCESS_TOKEN}
+      - STRAVA_REFRESH_TOKEN=${STRAVA_REFRESH_TOKEN}
+      - STRAVA_EXPIRES_AT=${STRAVA_EXPIRES_AT}
     depends_on:
       - api
     healthcheck:
