@@ -32,7 +32,8 @@ services:
       - RUN_MODE=prod
       - FITNESS_DB_PATH=/app/data/fitness.db
       - STRAVA_LOCAL_PATH=/app/strava-local-ingest
-      - RUN_STRAVA_SYNC=1
+      - RUN_STRAVA_SYNC=${RUN_STRAVA_SYNC:-0}
+      - PYTHONPATH=/app
       - STRAVA_API_ENABLED=${STRAVA_API_ENABLED:-0}
       - STRAVA_CLIENT_ID=${STRAVA_CLIENT_ID}
       - STRAVA_CLIENT_SECRET=${STRAVA_CLIENT_SECRET}
@@ -42,7 +43,7 @@ services:
     depends_on:
       - api
     healthcheck:
-      test: ["CMD-SHELL", "python scripts/worker_healthcheck.py"]
+      test: ["CMD-SHELL", "PYTHONPATH=/app python scripts/worker_healthcheck.py"]
       interval: 60s
       timeout: 5s
       retries: 3
@@ -63,7 +64,7 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      - DOMAIN=${DOMAIN}
+      - DOMAIN=${DOMAIN:-http://localhost}
     volumes:
       - ./infra/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
