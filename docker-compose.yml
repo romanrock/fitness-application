@@ -13,6 +13,12 @@ services:
       - FITNESS_JWT_SECRET=${FITNESS_JWT_SECRET}
       - FITNESS_DB_PATH=/app/data/fitness.db
       - FITNESS_RUN_INGEST_ON_START=0
+      - STRAVA_API_ENABLED=${STRAVA_API_ENABLED:-0}
+      - STRAVA_CLIENT_ID=${STRAVA_CLIENT_ID}
+      - STRAVA_CLIENT_SECRET=${STRAVA_CLIENT_SECRET}
+      - STRAVA_ACCESS_TOKEN=${STRAVA_ACCESS_TOKEN}
+      - STRAVA_REFRESH_TOKEN=${STRAVA_REFRESH_TOKEN}
+      - STRAVA_EXPIRES_AT=${STRAVA_EXPIRES_AT}
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health').read()\""]
       interval: 30s

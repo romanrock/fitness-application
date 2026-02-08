@@ -62,6 +62,7 @@ Create a user before ingestion:
 ```bash
 python3 scripts/create_user.py yourname yourpassword --assign-existing
 ```
+To use the Strava API instead of local ingest, set `STRAVA_API_ENABLED=1` and provide Strava client credentials in `.env`.
 
 ## Runtime split (recommended for prod-like use)
 ```bash

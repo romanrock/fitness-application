@@ -7,6 +7,8 @@
   - `curl "https://www.duckdns.org/update?domains=roman-fitness&token=TOKEN&ip=$(curl -s https://checkip.amazonaws.com)"`
 - Ensure `/home/ec2-user/fitness-platform/.env` contains:
   - `DOMAIN=roman-fitness.duckdns.org`
+  - `STRAVA_API_ENABLED=1` (when switching to API-based sync)
+  - `RUN_STRAVA_SYNC=0` (disable local ingest)
 
 ## Security group
 Allow inbound:
@@ -34,6 +36,14 @@ Allow inbound:
   - `PYTHONPATH=/app`
 - Healthcheck uses:
   - `PYTHONPATH=/app python scripts/worker_healthcheck.py`
+
+## Strava API sync
+- Set these in `.env` before enabling API sync:
+  - `STRAVA_CLIENT_ID`
+  - `STRAVA_CLIENT_SECRET`
+  - `STRAVA_REFRESH_TOKEN`
+  - `STRAVA_ACCESS_TOKEN` (optional; refresh token will update this)
+  - `STRAVA_EXPIRES_AT` (optional)
 
 ## Notes
 - Keep secrets in `.env` on EC2; do not commit to git.
