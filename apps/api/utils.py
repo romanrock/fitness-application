@@ -3,11 +3,11 @@ import json
 import sqlite3
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from packages.config import DB_PATH, LAST_UPDATE_PATH
+import packages.config as config
 
 
 def get_db() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(config.DB_PATH)
     try:
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA journal_mode=WAL")
@@ -18,7 +18,7 @@ def get_db() -> sqlite3.Connection:
 
 
 def db_exists() -> bool:
-    return DB_PATH.exists()
+    return config.DB_PATH.exists()
 
 
 def dict_rows(cursor) -> Iterable[Dict[str, Any]]:
@@ -103,10 +103,10 @@ def decode_polyline(polyline: str) -> List[List[float]]:
 
 
 def get_last_update() -> Optional[str]:
-    if not LAST_UPDATE_PATH.exists():
+    if not config.LAST_UPDATE_PATH.exists():
         return None
     try:
-        return json.loads(LAST_UPDATE_PATH.read_text()).get("last_update")
+        return json.loads(config.LAST_UPDATE_PATH.read_text()).get("last_update")
     except json.JSONDecodeError:
         return None
 
