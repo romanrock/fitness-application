@@ -63,13 +63,13 @@ def run_pipeline_once():
             return
         if not DB_PATH.exists():
             run_with_retry([str(py), str(ROOT / "scripts" / "init_db.py")])
+        run_with_retry([str(py), str(ROOT / "scripts" / "migrate_db.py")])
         if STRAVA_API_ENABLED:
             run_with_retry([str(py), str(ROOT / "services" / "ingestion" / "strava_api_import.py")])
         elif RUN_STRAVA_SYNC and (STRAVA_LOCAL_PATH / "run_all.js").exists():
             run_with_retry(["node", str(STRAVA_LOCAL_PATH / "run_all.js")], cwd=str(STRAVA_LOCAL_PATH))
         elif RUN_STRAVA_SYNC:
             print(f"STRAVA_LOCAL_PATH missing run_all.js: {STRAVA_LOCAL_PATH}")
-        run_with_retry([str(py), str(ROOT / "scripts" / "migrate_db.py")])
         run_with_retry([str(py), str(ROOT / "services" / "ingestion" / "strava_import.py")])
         run_with_retry([str(py), str(ROOT / "services" / "ingestion" / "weather_import.py")])
         run_with_retry([str(py), str(ROOT / "services" / "ingestion" / "segments_import.py")])

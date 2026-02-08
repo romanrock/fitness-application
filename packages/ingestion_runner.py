@@ -17,11 +17,11 @@ def run_ingestion_pipeline() -> bool:
         if not acquired:
             print("Pipeline lock active; skipping ingestion run.")
             return False
+        subprocess.run([py, str(root / "scripts" / "migrate_db.py")])
         if STRAVA_API_ENABLED:
             subprocess.run([py, str(root / "services" / "ingestion" / "strava_api_import.py")])
         elif RUN_STRAVA_SYNC and (STRAVA_LOCAL_PATH / "run_all.js").exists():
             subprocess.run(["node", str(STRAVA_LOCAL_PATH / "run_all.js")], cwd=str(STRAVA_LOCAL_PATH))
-        subprocess.run([py, str(root / "scripts" / "migrate_db.py")])
         subprocess.run([py, str(root / "services" / "ingestion" / "strava_import.py")])
         subprocess.run([py, str(root / "services" / "ingestion" / "weather_import.py")])
         subprocess.run([py, str(root / "services" / "ingestion" / "segments_import.py")])
