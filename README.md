@@ -35,6 +35,7 @@ python3 scripts/run_dev.py
 ## Documentation
 - `docs/SETUP.md`
 - `docs/PROD_PLAN.md`
+- `docs/DEPLOY.md`
 
 ## CI readiness
 - `Jenkinsfile` included
