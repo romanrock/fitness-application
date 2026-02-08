@@ -47,6 +47,7 @@ Allow inbound:
   - `STRAVA_REFRESH_TOKEN`
   - `STRAVA_ACCESS_TOKEN` (optional; refresh token will update this)
   - `STRAVA_EXPIRES_AT` (optional)
+  - `FITNESS_STRAVA_USER_ID` (optional; forces which user_id to attach new Strava data)
 
 ## Notes
 - Keep secrets in `.env` on EC2; do not commit to git.

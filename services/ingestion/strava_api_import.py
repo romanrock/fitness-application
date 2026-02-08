@@ -1,4 +1,5 @@
 import json
+import os
 import time
 from datetime import datetime, timezone
 from urllib import parse, request
@@ -63,6 +64,12 @@ def _ensure_source(conn: sqlite3.Connection) -> int:
 
 
 def _default_user_id(conn: sqlite3.Connection) -> int:
+    override = os.getenv("FITNESS_STRAVA_USER_ID")
+    if override:
+        try:
+            return int(override)
+        except ValueError:
+            raise RuntimeError("FITNESS_STRAVA_USER_ID must be an integer.")
     cur = conn.cursor()
     cur.execute("SELECT id FROM users ORDER BY id LIMIT 1")
     row = cur.fetchone()
