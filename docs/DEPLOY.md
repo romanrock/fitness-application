@@ -28,6 +28,7 @@ Allow inbound:
   - `git pull --rebase origin main`
 - Recreate services:
   - `docker-compose up -d --build caddy worker`
+  - `docker-compose up -d --build api` (after `.env` updates or sync logic changes)
 
 ## Worker health
 - Worker uses `RUN_STRAVA_SYNC` and `PYTHONPATH` to avoid missing local ingest artifacts.

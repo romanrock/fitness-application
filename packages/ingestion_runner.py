@@ -1,6 +1,7 @@
 from pathlib import Path
 import os
 import subprocess
+import sys
 
 from packages.config import RUN_STRAVA_SYNC, STRAVA_LOCAL_PATH, STRAVA_API_ENABLED
 from packages.pipeline_lock import pipeline_lock
@@ -8,7 +9,10 @@ from packages.pipeline_lock import pipeline_lock
 
 def run_ingestion_pipeline() -> bool:
     root = Path(__file__).resolve().parents[1]
-    py = os.getenv("FITNESS_PYTHON", str(root / ".venv" / "bin" / "python"))
+    py = os.getenv("FITNESS_PYTHON")
+    if not py:
+        venv_py = root / ".venv" / "bin" / "python"
+        py = str(venv_py) if venv_py.exists() else sys.executable
     with pipeline_lock() as acquired:
         if not acquired:
             print("Pipeline lock active; skipping ingestion run.")
