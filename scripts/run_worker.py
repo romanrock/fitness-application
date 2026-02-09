@@ -31,6 +31,7 @@ from packages.job_state import (
     finish_job_run,
     record_dead_letter,
 )
+from packages.metrics import inc, observe
 
 
 def run(cmd, cwd=None):
@@ -63,18 +64,18 @@ def run_pipeline_once():
             print("Pipeline lock active; skipping ingestion run.")
             return
         if not db.db_exists():
-            run_with_retry([str(py), str(ROOT / "scripts" / "init_db.py")])
-        run_with_retry([str(py), str(ROOT / "scripts" / "migrate_db.py")])
+            _run_step("init_db", [str(py), str(ROOT / "scripts" / "init_db.py")])
+        _run_step("migrate", [str(py), str(ROOT / "scripts" / "migrate_db.py")])
         if STRAVA_API_ENABLED:
-            run_with_retry([str(py), str(ROOT / "services" / "ingestion" / "strava_api_import.py")])
+            _run_step("strava_api", [str(py), str(ROOT / "services" / "ingestion" / "strava_api_import.py")])
         elif RUN_STRAVA_SYNC and (STRAVA_LOCAL_PATH / "run_all.js").exists():
-            run_with_retry(["node", str(STRAVA_LOCAL_PATH / "run_all.js")], cwd=str(STRAVA_LOCAL_PATH))
+            _run_step("strava_local", ["node", str(STRAVA_LOCAL_PATH / "run_all.js")], cwd=str(STRAVA_LOCAL_PATH))
         elif RUN_STRAVA_SYNC:
             print(f"STRAVA_LOCAL_PATH missing run_all.js: {STRAVA_LOCAL_PATH}")
-        run_with_retry([str(py), str(ROOT / "services" / "ingestion" / "strava_import.py")])
-        run_with_retry([str(py), str(ROOT / "services" / "ingestion" / "weather_import.py")])
-        run_with_retry([str(py), str(ROOT / "services" / "ingestion" / "segments_import.py")])
-        run_with_retry([str(py), str(ROOT / "services" / "processing" / "pipeline.py")])
+        _run_step("strava_import", [str(py), str(ROOT / "services" / "ingestion" / "strava_import.py")])
+        _run_step("weather_import", [str(py), str(ROOT / "services" / "ingestion" / "weather_import.py")])
+        _run_step("segments_import", [str(py), str(ROOT / "services" / "ingestion" / "segments_import.py")])
+        _run_step("pipeline", [str(py), str(ROOT / "services" / "processing" / "pipeline.py")])
         print("Pipeline complete")
 
 
@@ -82,6 +83,19 @@ def _backoff_seconds(attempt: int) -> float:
     base = PIPELINE_BACKOFF_BASE_SEC * (2 ** max(attempt - 1, 0))
     jitter = random.uniform(0.8, 1.2)
     return min(base * jitter, PIPELINE_BACKOFF_MAX_SEC)
+
+
+def _run_step(step: str, cmd: list[str], cwd: str | None = None) -> None:
+    start = time.perf_counter()
+    try:
+        run_with_retry(cmd, cwd=cwd)
+        inc(f"pipeline_step_runs_total{{step=\"{step}\"}}")
+    except subprocess.CalledProcessError:
+        inc(f"pipeline_step_runs_total{{step=\"{step}\"}}")
+        inc(f"pipeline_step_failures_total{{step=\"{step}\"}}")
+        raise
+    finally:
+        observe(f"pipeline_step_duration_seconds{{step=\"{step}\"}}", time.perf_counter() - start)
 
 
 def _run_with_retries() -> tuple[bool, str | None, int]:
