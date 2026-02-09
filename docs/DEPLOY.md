@@ -41,11 +41,19 @@ Required secrets:
 - `EC2_USER` (e.g. `ec2-user`)
 - `EC2_SSH_KEY` (private key contents)
 - `DEPLOY_PATH` (e.g. `/home/ec2-user/fitness-platform`)
+ - Optional: `HEALTHCHECK_URL` (e.g. `https://roman-fitness.duckdns.org/api/health`)
 
 Deploy action runs:
 ```
 bash scripts/deploy.sh
 ```
+
+## Staging (minimal notes)
+If you want a staging environment later without Terraform:
+- Use a **second EC2** instance (or a different Docker host).
+- Use a **different hostname** and `.env` (e.g. `roman-fitness-staging.duckdns.org`).
+- Keep a **separate SSM path** (e.g. `/fitness-platform/staging/`).
+- Same deploy workflow, but use a different GitHub Action environment + secrets.
 
 ## Worker health
 - Worker uses `RUN_STRAVA_SYNC` and `PYTHONPATH` to avoid missing local ingest artifacts.

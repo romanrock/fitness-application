@@ -92,7 +92,7 @@ This is a parkable, staged plan to take the fitness-platform from local/dev to p
 - Context drawer UI + feedback inputs
 - LLM personalization with guardrails
 
-## Phase 7 — Deployment & ops
+## Phase 7 — Deployment & ops (complete; Terraform pending)
 - CI/CD pipeline (GitHub Actions + AWS OIDC)
 - Staging environment
 - Infra as code (Terraform)
