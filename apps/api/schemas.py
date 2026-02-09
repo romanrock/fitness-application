@@ -257,6 +257,33 @@ class InsightsResponse(DBMissingResponse):
     dist_28d_km: Optional[float] = None
 
 
+class InsightsDailyResponse(DBMissingResponse):
+    date: Optional[str] = None
+    summary: Optional[Dict[str, Any]] = None
+
+
+class InsightsContextRequest(BaseModel):
+    event_type: str
+    payload: Dict[str, Any]
+    occurred_at: Optional[str] = None
+    source: Optional[str] = None
+
+
+class InsightsContextResponse(DBMissingResponse):
+    status: str
+    stored_at: Optional[str] = None
+
+
+class InsightsEvaluateRequest(BaseModel):
+    question: str
+    context: Optional[Dict[str, Any]] = None
+
+
+class InsightsEvaluateResponse(DBMissingResponse):
+    status: str
+    answer: Optional[str] = None
+
+
 class SegmentBestEntry(BaseModel):
     time_s: Optional[float] = None
     activity_id: Optional[str] = None

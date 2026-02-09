@@ -1,3 +1,4 @@
+import json
 import time
 import statistics
 from typing import Dict
@@ -6,7 +7,15 @@ from fastapi import APIRouter, Depends
 
 from ..cache import get_or_set
 from ..deps import get_current_user
-from ..schemas import InsightsResponse, InsightsSeriesResponse
+from ..schemas import (
+    InsightsContextRequest,
+    InsightsContextResponse,
+    InsightsDailyResponse,
+    InsightsEvaluateRequest,
+    InsightsEvaluateResponse,
+    InsightsResponse,
+    InsightsSeriesResponse,
+)
 from ..utils import compute_vdot, db_exists, get_db, get_last_update, linear_slope, week_key
 
 
@@ -322,6 +331,45 @@ def insights(user=Depends(get_current_user)):
         }
 
     return get_or_set(cache_key, CACHE_TTL_SECONDS, last_update, compute)
+
+
+@router.get("/insights/daily", response_model=InsightsDailyResponse)
+def insights_daily(user=Depends(get_current_user)):
+    if not db_exists():
+        return {"db": "missing"}
+    return {"date": time.strftime("%Y-%m-%d"), "summary": None}
+
+
+@router.post("/insights/context", response_model=InsightsContextResponse)
+def insights_context(payload: InsightsContextRequest, user=Depends(get_current_user)):
+    if not db_exists():
+        return {"db": "missing"}
+    occurred_at = payload.occurred_at or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO context_events(user_id, occurred_at, event_type, payload_json, source)
+            VALUES(?, ?, ?, ?, ?)
+            """,
+            (
+                user["id"],
+                occurred_at,
+                payload.event_type,
+                json.dumps(payload.payload),
+                payload.source,
+            ),
+        )
+        conn.commit()
+    return {"status": "stored", "stored_at": occurred_at}
+
+
+@router.post("/insights/evaluate", response_model=InsightsEvaluateResponse)
+def insights_evaluate(payload: InsightsEvaluateRequest, user=Depends(get_current_user)):
+    if not db_exists():
+        return {"db": "missing"}
+    _ = user  # placeholder for future personalization
+    return {"status": "pending", "answer": None}
 
 
 @router.get("/insights/series", response_model=InsightsSeriesResponse)

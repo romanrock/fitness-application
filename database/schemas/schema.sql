@@ -136,6 +136,35 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
+CREATE TABLE IF NOT EXISTS context_events (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  occurred_at TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  source TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS objective_profiles (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  profile_json TEXT NOT NULL,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS insight_sessions (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  session_date TEXT NOT NULL,
+  prompt_json TEXT,
+  response_json TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_activities_user_start_time ON activities(user_id, start_time);
 CREATE INDEX IF NOT EXISTS idx_activities_activity_type ON activities(activity_type);
 CREATE INDEX IF NOT EXISTS idx_activities_user_type_time ON activities(user_id, lower(activity_type), start_time);
@@ -148,6 +177,9 @@ CREATE INDEX IF NOT EXISTS idx_activities_calc_user_activity ON activities_calc(
 CREATE INDEX IF NOT EXISTS idx_activities_calc_user_time ON activities_calc(user_id, start_time);
 CREATE INDEX IF NOT EXISTS idx_activities_norm_activity ON activities_norm(activity_id);
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user ON refresh_tokens(user_id);
+CREATE INDEX IF NOT EXISTS idx_context_events_user_time ON context_events(user_id, occurred_at);
+CREATE INDEX IF NOT EXISTS idx_objective_profiles_user ON objective_profiles(user_id);
+CREATE INDEX IF NOT EXISTS idx_insight_sessions_user_date ON insight_sessions(user_id, session_date);
 CREATE INDEX IF NOT EXISTS idx_segments_best_scope_distance ON segments_best(scope, distance_m);
 CREATE INDEX IF NOT EXISTS idx_segments_best_scope_activity ON segments_best(scope, activity_id);
 CREATE INDEX IF NOT EXISTS idx_source_sync_state_user ON source_sync_state(user_id);
