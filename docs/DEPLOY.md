@@ -31,8 +31,21 @@ Allow inbound:
   - `docker-compose up -d --build api` (after `.env` updates or sync logic changes)
  - Pipeline lock is shared across containers via:
    - `FITNESS_PIPELINE_LOCK_PATH=/app/data/fitness_pipeline.lock`
- - To use Postgres, set `FITNESS_DB_URL` in `.env` and run:
-   - `python3 scripts/migrate_db.py`
+- To use Postgres, set `FITNESS_DB_URL` in `.env` and run:
+  - `python3 scripts/migrate_db.py`
+
+## CI/CD (GitHub Actions)
+Workflow: `.github/workflows/deploy.yml` (SSH deploy).
+Required secrets:
+- `EC2_HOST` (public IP or hostname)
+- `EC2_USER` (e.g. `ec2-user`)
+- `EC2_SSH_KEY` (private key contents)
+- `DEPLOY_PATH` (e.g. `/home/ec2-user/fitness-platform`)
+
+Deploy action runs:
+```
+bash scripts/deploy.sh
+```
 
 ## Worker health
 - Worker uses `RUN_STRAVA_SYNC` and `PYTHONPATH` to avoid missing local ingest artifacts.

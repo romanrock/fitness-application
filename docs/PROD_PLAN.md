@@ -97,6 +97,8 @@ This is a parkable, staged plan to take the fitness-platform from local/dev to p
 - Staging environment
 - Infra as code (Terraform)
 - Runbooks + alerts
+  - Added SSH deploy workflow + `scripts/deploy.sh`
+  - Added runbook (`docs/RUNBOOK.md`) and alerts checklist (`docs/ALERTS.md`)
 
 ## Phase 7.1 — Repo hygiene / cleanup (prep for prod)
 - `.gitignore` hardening: remove/ignore `data/*.db`, WAL/SHM, `exports/`, `.DS_Store`, `__pycache__`, `.pytest_cache`, `.venv/`
