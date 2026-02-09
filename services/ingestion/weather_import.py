@@ -1,25 +1,16 @@
 """Import weather JSON into SQLite (raw table)."""
 from pathlib import Path
 import json
-import sqlite3
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-from packages.config import DB_PATH, STRAVA_LOCAL_PATH
+from packages import db
+from packages.config import STRAVA_LOCAL_PATH
 
 RAW_DIR = STRAVA_LOCAL_PATH / "data"
 WEATHER_DIR = RAW_DIR / "weather"
-
-
-def configure_sqlite(conn):
-    try:
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA busy_timeout=5000")
-        conn.execute("PRAGMA foreign_keys=ON")
-    except sqlite3.OperationalError:
-        return
 
 
 def import_weather(conn):
@@ -50,10 +41,10 @@ def import_weather(conn):
 
 
 def main():
-    if not DB_PATH.exists():
+    if not db.db_exists():
         raise SystemExit("DB not initialized. Run scripts/init_db.py")
-    with sqlite3.connect(DB_PATH) as conn:
-        configure_sqlite(conn)
+    with db.connect() as conn:
+        db.configure_connection(conn)
         c = import_weather(conn)
     print(f"Imported weather records: {c}")
 

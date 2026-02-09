@@ -1,18 +1,15 @@
-import sqlite3
-from pathlib import Path
-
-ROOT = Path(__file__).resolve().parents[1]
-DB_PATH = ROOT / "data" / "fitness.db"
+from packages import db
 
 
 def main():
-    if not DB_PATH.exists():
+    if not db.db_exists():
         raise SystemExit("DB not initialized. Run scripts/init_db.py")
-    with sqlite3.connect(DB_PATH) as conn:
-        try:
-            conn.execute("PRAGMA foreign_keys=ON")
-        except sqlite3.OperationalError:
-            pass
+    with db.connect() as conn:
+        db.configure_connection(conn)
+        if db.is_postgres():
+            conn.execute("SELECT 1")
+            print("DB integrity OK (Postgres checks skipped).")
+            return
         fk_issues = conn.execute("PRAGMA foreign_key_check").fetchall()
         if fk_issues:
             print("Foreign key violations detected:")

@@ -1,6 +1,5 @@
 import argparse
 import getpass
-import sqlite3
 import sys
 from pathlib import Path
 
@@ -9,7 +8,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from apps.api.auth import hash_password, validate_password
-from packages.config import DB_PATH
+from packages import db
 
 
 def prompt_password() -> str:
@@ -28,7 +27,7 @@ def main() -> None:
     parser.add_argument("--password")
     args = parser.parse_args()
 
-    if not DB_PATH.exists():
+    if not db.db_exists():
         raise SystemExit("DB not initialized. Run scripts/init_db.py first.")
 
     password = args.password or prompt_password()
@@ -38,7 +37,8 @@ def main() -> None:
         raise SystemExit(str(exc))
     pw_hash = hash_password(password)
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with db.connect() as conn:
+        db.configure_connection(conn)
         cur = conn.cursor()
         cur.execute("SELECT id FROM users WHERE username=?", (args.username,))
         row = cur.fetchone()
@@ -48,7 +48,7 @@ def main() -> None:
         cur.execute("UPDATE users SET password_hash=? WHERE id=?", (pw_hash, user_id))
         try:
             cur.execute("DELETE FROM refresh_tokens WHERE user_id=?", (user_id,))
-        except sqlite3.OperationalError:
+        except Exception:
             pass
         conn.commit()
     print(f"Password reset for {args.username} (id={user_id}).")

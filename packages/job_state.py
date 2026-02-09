@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 
+from packages import db
 
 @dataclass
 class JobState:
@@ -18,7 +18,9 @@ class JobState:
     updated_at: str
 
 
-def ensure_job_tables(conn: sqlite3.Connection) -> None:
+def ensure_job_tables(conn) -> None:
+    if db.is_postgres():
+        return
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS job_runs (
@@ -66,7 +68,15 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def load_job_state(conn: sqlite3.Connection, job_name: str) -> JobState:
+def _to_iso(value: Optional[object]) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return str(value)
+
+
+def load_job_state(conn, job_name: str) -> JobState:
     ensure_job_tables(conn)
     row = conn.execute(
         """
@@ -78,7 +88,16 @@ def load_job_state(conn: sqlite3.Connection, job_name: str) -> JobState:
         (job_name,),
     ).fetchone()
     if row:
-        return JobState(*row)
+        return JobState(
+            row[0],
+            row[1],
+            _to_iso(row[2]),
+            _to_iso(row[3]),
+            _to_iso(row[4]),
+            row[5],
+            row[6],
+            _to_iso(row[7]) or _now_iso(),
+        )
     now = _now_iso()
     conn.execute(
         """
@@ -95,7 +114,7 @@ def load_job_state(conn: sqlite3.Connection, job_name: str) -> JobState:
 
 
 def update_job_state(
-    conn: sqlite3.Connection,
+    conn,
     job_name: str,
     consecutive_failures: int,
     cooldown_until: Optional[str],
@@ -131,9 +150,21 @@ def update_job_state(
     conn.commit()
 
 
-def start_job_run(conn: sqlite3.Connection, job_name: str) -> int:
+def start_job_run(conn, job_name: str) -> int:
     ensure_job_tables(conn)
     cur = conn.cursor()
+    if db.is_postgres():
+        cur.execute(
+            """
+            INSERT INTO job_runs(job_name, started_at, status)
+            VALUES(?, ?, ?)
+            RETURNING id
+            """,
+            (job_name, _now_iso(), "running"),
+        )
+        run_id = cur.fetchone()[0]
+        conn.commit()
+        return run_id
     cur.execute(
         """
         INSERT INTO job_runs(job_name, started_at, status)
@@ -146,7 +177,7 @@ def start_job_run(conn: sqlite3.Connection, job_name: str) -> int:
 
 
 def finish_job_run(
-    conn: sqlite3.Connection,
+    conn,
     run_id: int,
     status: str,
     attempts: int,
@@ -170,7 +201,7 @@ def finish_job_run(
 
 
 def record_dead_letter(
-    conn: sqlite3.Connection,
+    conn,
     job_name: str,
     error: Optional[str],
     attempts: int,

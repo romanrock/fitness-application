@@ -3,6 +3,12 @@ set -euo pipefail
 
 BACKUP_DIR="${FITNESS_BACKUP_DIR:-/app/data/backups}"
 TARGET="${1:-}"
+DB_URL="${FITNESS_DB_URL:-}"
+
+if [[ -n "$DB_URL" ]]; then
+  echo "Postgres detected (FITNESS_DB_URL set). Use pg_restore or psql checks." >&2
+  exit 1
+fi
 
 if [ -z "$TARGET" ]; then
   TARGET=$(ls -t "$BACKUP_DIR"/fitness-*.db.gz 2>/dev/null | head -n 1 || true)

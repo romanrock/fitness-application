@@ -3,15 +3,14 @@ from pathlib import Path
 import sys
 import threading
 import time
-import sqlite3
 from datetime import datetime, timedelta, timezone
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from packages import db
 from packages.config import (
-    DB_PATH,
     REFRESH_SECONDS,
     RUN_STRAVA_SYNC,
     STRAVA_API_ENABLED,
@@ -61,7 +60,7 @@ def run_pipeline_once():
         if not acquired:
             print("Pipeline lock active; skipping ingestion run.")
             return
-        if not DB_PATH.exists():
+        if not db.db_exists():
             run_with_retry([str(py), str(ROOT / "scripts" / "init_db.py")])
         run_with_retry([str(py), str(ROOT / "scripts" / "migrate_db.py")])
         if STRAVA_API_ENABLED:
@@ -100,9 +99,10 @@ def _run_with_retries() -> tuple[bool, str | None, int]:
 
 
 def _should_skip_for_cooldown() -> bool:
-    if not DB_PATH.exists():
+    if not db.db_exists():
         return False
-    with sqlite3.connect(DB_PATH) as conn:
+    with db.connect() as conn:
+        db.configure_connection(conn)
         state = load_job_state(conn, "pipeline")
         if state.cooldown_until:
             try:
@@ -117,9 +117,10 @@ def _should_skip_for_cooldown() -> bool:
 
 
 def _record_job_state(success: bool, error: str | None, attempts: int, started_at: datetime, finished_at: datetime) -> None:
-    if not DB_PATH.exists():
+    if not db.db_exists():
         return
-    with sqlite3.connect(DB_PATH) as conn:
+    with db.connect() as conn:
+        db.configure_connection(conn)
         state = load_job_state(conn, "pipeline")
         consecutive_failures = state.consecutive_failures
         cooldown_until = state.cooldown_until
@@ -151,16 +152,18 @@ def schedule_pipeline(stop_event: threading.Event):
             continue
         started_at = datetime.now(timezone.utc)
         run_id = None
-        if DB_PATH.exists():
-            with sqlite3.connect(DB_PATH) as conn:
+        if db.db_exists():
+            with db.connect() as conn:
+                db.configure_connection(conn)
                 run_id = start_job_run(conn, "pipeline")
         try:
             success, error, attempts = _run_with_retries()
         except subprocess.CalledProcessError as exc:
             success, error, attempts = False, str(exc), PIPELINE_MAX_RETRIES + 1
         finished_at = datetime.now(timezone.utc)
-        if run_id and DB_PATH.exists():
-            with sqlite3.connect(DB_PATH) as conn:
+        if run_id and db.db_exists():
+            with db.connect() as conn:
+                db.configure_connection(conn)
                 finish_job_run(
                     conn,
                     run_id,
@@ -187,16 +190,18 @@ def manual_trigger(stop_event: threading.Event):
                 continue
             started_at = datetime.now(timezone.utc)
             run_id = None
-            if DB_PATH.exists():
-                with sqlite3.connect(DB_PATH) as conn:
+            if db.db_exists():
+                with db.connect() as conn:
+                    db.configure_connection(conn)
                     run_id = start_job_run(conn, "pipeline")
             try:
                 success, error, attempts = _run_with_retries()
             except subprocess.CalledProcessError as exc:
                 success, error, attempts = False, str(exc), PIPELINE_MAX_RETRIES + 1
             finished_at = datetime.now(timezone.utc)
-            if run_id and DB_PATH.exists():
-                with sqlite3.connect(DB_PATH) as conn:
+            if run_id and db.db_exists():
+                with db.connect() as conn:
+                    db.configure_connection(conn)
                     finish_job_run(
                         conn,
                         run_id,

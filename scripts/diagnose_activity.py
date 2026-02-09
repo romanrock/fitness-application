@@ -1,19 +1,17 @@
 import json
-import sqlite3
 import sys
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-DB_PATH = ROOT / "data" / "fitness.db"
+from packages import db
 
 
 def main():
     if len(sys.argv) < 2:
         raise SystemExit("Usage: python3 scripts/diagnose_activity.py <activity_id>")
     activity_id = sys.argv[1]
-    if not DB_PATH.exists():
+    if not db.db_exists():
         raise SystemExit("DB not found. Run the pipeline first.")
-    with sqlite3.connect(DB_PATH) as conn:
+    with db.connect() as conn:
+        db.configure_connection(conn)
         cur = conn.cursor()
         cur.execute(
             "SELECT stream_type FROM streams_raw WHERE activity_id=? ORDER BY stream_type",

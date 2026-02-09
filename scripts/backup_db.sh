@@ -2,9 +2,15 @@
 set -euo pipefail
 
 DB_PATH="${FITNESS_DB_PATH:-/app/data/fitness.db}"
+DB_URL="${FITNESS_DB_URL:-}"
 BACKUP_DIR="${FITNESS_BACKUP_DIR:-/app/data/backups}"
 S3_BUCKET="${FITNESS_BACKUP_S3_BUCKET:-}"
 S3_PREFIX="${FITNESS_BACKUP_S3_PREFIX:-fitness-platform}"
+
+if [[ -n "$DB_URL" ]]; then
+  echo "Postgres detected (FITNESS_DB_URL set). Use pg_dump for backups." >&2
+  exit 1
+fi
 
 if [ ! -f "$DB_PATH" ]; then
   echo "DB not found: $DB_PATH" >&2

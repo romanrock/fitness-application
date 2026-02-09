@@ -31,6 +31,8 @@ Allow inbound:
   - `docker-compose up -d --build api` (after `.env` updates or sync logic changes)
  - Pipeline lock is shared across containers via:
    - `FITNESS_PIPELINE_LOCK_PATH=/app/data/fitness_pipeline.lock`
+ - To use Postgres, set `FITNESS_DB_URL` in `.env` and run:
+   - `python3 scripts/migrate_db.py`
 
 ## Worker health
 - Worker uses `RUN_STRAVA_SYNC` and `PYTHONPATH` to avoid missing local ingest artifacts.

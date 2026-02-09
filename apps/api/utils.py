@@ -1,24 +1,19 @@
 import datetime
 import json
-import sqlite3
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import packages.config as config
+from packages import db
 
 
-def get_db() -> sqlite3.Connection:
-    conn = sqlite3.connect(config.DB_PATH)
-    try:
-        conn.execute("PRAGMA foreign_keys=ON")
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA busy_timeout=5000")
-    except sqlite3.OperationalError:
-        pass
+def get_db():
+    conn = db.connect()
+    db.configure_connection(conn)
     return conn
 
 
 def db_exists() -> bool:
-    return config.DB_PATH.exists()
+    return db.db_exists()
 
 
 def dict_rows(cursor) -> Iterable[Dict[str, Any]]:
@@ -113,8 +108,11 @@ def get_last_update() -> Optional[str]:
 
 def week_key(value: str) -> str:
     try:
-        dt = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if isinstance(value, datetime.datetime):
+            dt = value
+        else:
+            dt = datetime.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except Exception:
-        return value[:10]
+        return str(value)[:10]
     monday = dt - datetime.timedelta(days=dt.weekday())
     return monday.date().isoformat()

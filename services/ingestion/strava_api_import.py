@@ -3,7 +3,6 @@ import os
 import time
 from datetime import datetime, timezone
 from urllib import parse, request
-import sqlite3
 from pathlib import Path
 import sys
 
@@ -11,8 +10,8 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from packages import db
 from packages.config import (
-    DB_PATH,
     STRAVA_CLIENT_ID,
     STRAVA_CLIENT_SECRET,
     STRAVA_REFRESH_TOKEN,
@@ -32,6 +31,8 @@ def _utc_now() -> datetime:
 def _parse_iso_to_epoch(value: str | None) -> int | None:
     if not value:
         return None
+    if isinstance(value, datetime):
+        return int(value.timestamp())
     try:
         dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
@@ -56,14 +57,17 @@ def _post_form(url: str, data: dict) -> dict:
     return json.loads(payload)
 
 
-def _ensure_source(conn: sqlite3.Connection) -> int:
+def _ensure_source(conn) -> int:
     cur = conn.cursor()
-    cur.execute("INSERT OR IGNORE INTO sources(name) VALUES(?)", ("strava",))
+    cur.execute(
+        "INSERT INTO sources(name) VALUES(?) ON CONFLICT(name) DO NOTHING",
+        ("strava",),
+    )
     cur.execute("SELECT id FROM sources WHERE name=?", ("strava",))
     return cur.fetchone()[0]
 
 
-def _default_user_id(conn: sqlite3.Connection) -> int:
+def _default_user_id(conn) -> int:
     override = os.getenv("FITNESS_STRAVA_USER_ID")
     if override:
         try:
@@ -78,7 +82,7 @@ def _default_user_id(conn: sqlite3.Connection) -> int:
     return row[0]
 
 
-def _load_sync_state(conn: sqlite3.Connection, source_id: int, user_id: int) -> dict:
+def _load_sync_state(conn, source_id: int, user_id: int) -> dict:
     cur = conn.cursor()
     cur.execute(
         """
@@ -104,7 +108,7 @@ def _load_sync_state(conn: sqlite3.Connection, source_id: int, user_id: int) -> 
     return {"last_activity_time": None, "access_token": None, "refresh_token": None, "expires_at": None}
 
 
-def _update_sync_state(conn: sqlite3.Connection, source_id: int, user_id: int, fields: dict) -> None:
+def _update_sync_state(conn, source_id: int, user_id: int, fields: dict) -> None:
     keys = ["last_activity_time", "access_token", "refresh_token", "expires_at"]
     updates = {k: fields.get(k) for k in keys}
     cur = conn.cursor()
@@ -131,7 +135,7 @@ def _update_sync_state(conn: sqlite3.Connection, source_id: int, user_id: int, f
     conn.commit()
 
 
-def _resolve_last_activity_time(conn: sqlite3.Connection, source_id: int, user_id: int, state: dict) -> int:
+def _resolve_last_activity_time(conn, source_id: int, user_id: int, state: dict) -> int:
     if state.get("last_activity_time"):
         return int(state["last_activity_time"])
     cur = conn.cursor()
@@ -183,7 +187,7 @@ def _ensure_token(state: dict) -> dict:
     }
 
 
-def _upsert_activity(conn: sqlite3.Connection, source_id: int, user_id: int, activity: dict) -> None:
+def _upsert_activity(conn, source_id: int, user_id: int, activity: dict) -> None:
     cur = conn.cursor()
     cur.execute(
         """
@@ -204,7 +208,7 @@ def _upsert_activity(conn: sqlite3.Connection, source_id: int, user_id: int, act
     )
 
 
-def _stream_exists(conn: sqlite3.Connection, source_id: int, activity_id: str, stream_type: str) -> bool:
+def _stream_exists(conn, source_id: int, activity_id: str, stream_type: str) -> bool:
     cur = conn.cursor()
     cur.execute(
         """
@@ -216,7 +220,7 @@ def _stream_exists(conn: sqlite3.Connection, source_id: int, activity_id: str, s
     return cur.fetchone() is not None
 
 
-def _upsert_stream(conn: sqlite3.Connection, source_id: int, user_id: int, activity_id: str, stream_type: str, stream: dict) -> None:
+def _upsert_stream(conn, source_id: int, user_id: int, activity_id: str, stream_type: str, stream: dict) -> None:
     cur = conn.cursor()
     cur.execute(
         """
@@ -265,7 +269,8 @@ def _fetch_activities(access_token: str, after_epoch: int) -> list[dict]:
 def main() -> None:
     if not STRAVA_CLIENT_ID or not STRAVA_CLIENT_SECRET or not STRAVA_REFRESH_TOKEN:
         raise RuntimeError("Strava API not configured. Set STRAVA_CLIENT_ID/SECRET/REFRESH_TOKEN.")
-    with sqlite3.connect(DB_PATH) as conn:
+    with db.connect() as conn:
+        db.configure_connection(conn)
         source_id = _ensure_source(conn)
         user_id = _default_user_id(conn)
         state = _load_sync_state(conn, source_id, user_id)

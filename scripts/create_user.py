@@ -1,5 +1,4 @@
 import argparse
-import sqlite3
 import sys
 from pathlib import Path
 
@@ -8,7 +7,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from apps.api.auth import hash_password, validate_password
-from packages.config import DB_PATH
+from packages import db
 
 
 def main():
@@ -18,20 +17,22 @@ def main():
     parser.add_argument("--assign-existing", action="store_true", default=False)
     args = parser.parse_args()
 
-    if not DB_PATH.exists():
+    if not db.db_exists():
         raise SystemExit("DB not initialized. Run scripts/init_db.py first.")
 
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS users (
-              id INTEGER PRIMARY KEY,
-              username TEXT NOT NULL UNIQUE,
-              password_hash TEXT NOT NULL,
-              created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    with db.connect() as conn:
+        db.configure_connection(conn)
+        if not db.is_postgres():
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS users (
+                  id INTEGER PRIMARY KEY,
+                  username TEXT NOT NULL UNIQUE,
+                  password_hash TEXT NOT NULL,
+                  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+                """
             )
-            """
-        )
         cur = conn.cursor()
         try:
             validate_password(args.password, args.username)

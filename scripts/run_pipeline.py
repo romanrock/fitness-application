@@ -7,7 +7,8 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-from packages.config import DB_PATH, API_PORT, WEB_PORT, REFRESH_SECONDS, RUN_MODE
+from packages import db
+from packages.config import API_PORT, WEB_PORT, REFRESH_SECONDS, RUN_MODE
 from packages.pipeline_lock import pipeline_lock
 
 
@@ -65,7 +66,7 @@ def run_pipeline():
         if not acquired:
             print("Pipeline lock active; skipping ingestion run.")
             return
-        if not DB_PATH.exists():
+        if not db.db_exists():
             run([str(py), str(ROOT / "scripts" / "init_db.py")])
         run([str(py), str(ROOT / "scripts" / "migrate_db.py")])
         run([str(py), str(ROOT / "services" / "ingestion" / "strava_import.py")])

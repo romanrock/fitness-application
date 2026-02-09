@@ -1,5 +1,3 @@
-import sqlite3
-
 from fastapi import APIRouter
 
 from ..schemas import HealthResponse
@@ -39,6 +37,6 @@ def health():
                         "message": row[7],
                         "duration_sec": row[8],
                     }
-            except sqlite3.OperationalError:
+            except Exception:
                 pipeline = None
     return {"status": "ok", "last_update": last_update, "pipeline": pipeline}

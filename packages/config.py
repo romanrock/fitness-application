@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if load_dotenv:
     load_dotenv(ROOT / ".env")
 
+DB_URL = os.getenv("FITNESS_DB_URL")
 DB_PATH = Path(os.getenv("FITNESS_DB_PATH", ROOT / "data" / "fitness.db"))
 LAST_UPDATE_PATH = Path(os.getenv("FITNESS_LAST_UPDATE_PATH", ROOT / "data" / "last_update.json"))
 API_HOST = os.getenv("FITNESS_API_HOST", "127.0.0.1")

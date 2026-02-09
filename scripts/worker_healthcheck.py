@@ -1,13 +1,14 @@
 import datetime
-import sqlite3
-from packages.config import DB_PATH, REFRESH_SECONDS
+from packages import db
+from packages.config import REFRESH_SECONDS
 
 
 def main() -> int:
-    if not DB_PATH.exists():
+    if not db.db_exists():
         print("DB missing")
         return 1
-    with sqlite3.connect(DB_PATH) as conn:
+    with db.connect() as conn:
+        db.configure_connection(conn)
         cur = conn.cursor()
         cur.execute(
             """
@@ -26,7 +27,10 @@ def main() -> int:
             print(f"Last pipeline status: {status}")
             return 1
         try:
-            finished_dt = datetime.datetime.fromisoformat(finished_at.replace("Z", "+00:00"))
+            if isinstance(finished_at, datetime.datetime):
+                finished_dt = finished_at
+            else:
+                finished_dt = datetime.datetime.fromisoformat(str(finished_at).replace("Z", "+00:00"))
         except Exception:
             print("Invalid finished_at")
             return 1

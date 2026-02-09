@@ -1,13 +1,13 @@
 """Import Strava JSONL + streams into SQLite (raw tables)."""
 from pathlib import Path
 import json
-import sqlite3
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-from packages.config import DB_PATH, STRAVA_LOCAL_PATH
+from packages import db
+from packages.config import STRAVA_LOCAL_PATH
 
 RAW_DIR = STRAVA_LOCAL_PATH / "data"
 ACTIVITIES = RAW_DIR / "activities.jsonl"
@@ -16,18 +16,12 @@ STREAMS_DIR = RAW_DIR / "streams"
 SOURCE_NAME = "strava"
 
 
-def configure_sqlite(conn):
-    try:
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA busy_timeout=5000")
-        conn.execute("PRAGMA foreign_keys=ON")
-    except sqlite3.OperationalError:
-        return
-
-
 def ensure_source(conn):
     cur = conn.cursor()
-    cur.execute("INSERT OR IGNORE INTO sources(name) VALUES(?)", (SOURCE_NAME,))
+    cur.execute(
+        "INSERT INTO sources(name) VALUES(?) ON CONFLICT(name) DO NOTHING",
+        (SOURCE_NAME,),
+    )
     cur.execute("SELECT id FROM sources WHERE name=?", (SOURCE_NAME,))
     return cur.fetchone()[0]
 
@@ -95,10 +89,10 @@ def import_streams(conn, source_id, user_id):
 
 
 def main():
-    if not DB_PATH.exists():
+    if not db.db_exists():
         raise SystemExit("DB not initialized. Run scripts/init_db.py")
-    with sqlite3.connect(DB_PATH) as conn:
-        configure_sqlite(conn)
+    with db.connect() as conn:
+        db.configure_connection(conn)
         source_id = ensure_source(conn)
         user_id = get_default_user_id(conn)
         a = import_activities(conn, source_id, user_id)

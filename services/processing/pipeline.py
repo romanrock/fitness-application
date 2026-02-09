@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import math
-import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -13,6 +12,7 @@ from typing import Dict, List, Optional, Tuple
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+from packages import db
 from packages.config import DB_PATH, LAST_UPDATE_PATH, HR_MAX, HR_REST, HR_ZONE_METHOD
 
 
@@ -32,13 +32,8 @@ def parse_dt(value: Optional[str]) -> Optional[datetime]:
         return None
 
 
-def configure_sqlite(conn: sqlite3.Connection) -> None:
-    try:
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA busy_timeout=5000")
-        conn.execute("PRAGMA foreign_keys=ON")
-    except sqlite3.OperationalError:
-        return
+def configure_sqlite(conn) -> None:
+    db.configure_connection(conn)
 
 
 def week_start_iso(dt: datetime) -> str:
@@ -213,7 +208,7 @@ def smooth_hr(hr: List[Optional[float]]) -> Tuple[List[Optional[float]], Optiona
     return hr, mean(hr)
 
 
-def load_streams(conn: sqlite3.Connection, activity_id: str) -> Dict[str, dict]:
+def load_streams(conn, activity_id: str) -> Dict[str, dict]:
     rows = conn.execute(
         "SELECT stream_type, raw_json FROM streams_raw WHERE activity_id=?",
         (activity_id,),
@@ -526,7 +521,7 @@ def compute_hr_zones(
     }
 
 
-def load_weather(conn: sqlite3.Connection, activity_id: str) -> Optional[dict]:
+def load_weather(conn, activity_id: str) -> Optional[dict]:
     row = conn.execute(
         "SELECT raw_json FROM weather_raw WHERE activity_id=?",
         (activity_id,),
@@ -539,7 +534,7 @@ def load_weather(conn: sqlite3.Connection, activity_id: str) -> Optional[dict]:
         return None
 
 
-def upsert_activity_norm(conn: sqlite3.Connection, activity_id: str, values: dict) -> None:
+def upsert_activity_norm(conn, activity_id: str, values: dict) -> None:
     conn.execute(
         """
         INSERT INTO activities_norm(
@@ -577,7 +572,7 @@ def upsert_activity_norm(conn: sqlite3.Connection, activity_id: str, values: dic
     )
 
 
-def upsert_activity_calc(conn: sqlite3.Connection, activity_id: str, values: dict) -> None:
+def upsert_activity_calc(conn, activity_id: str, values: dict) -> None:
     conn.execute(
         """
         INSERT INTO activities_calc(
@@ -646,7 +641,7 @@ def upsert_activity_calc(conn: sqlite3.Connection, activity_id: str, values: dic
     )
 
 
-def upsert_activity_core(conn: sqlite3.Connection, values: dict) -> None:
+def upsert_activity_core(conn, values: dict) -> None:
     conn.execute(
         """
         INSERT INTO activities(
@@ -677,7 +672,7 @@ def upsert_activity_core(conn: sqlite3.Connection, values: dict) -> None:
     )
 
 
-def upsert_activity_run_details(conn: sqlite3.Connection, values: dict) -> None:
+def upsert_activity_run_details(conn, values: dict) -> None:
     conn.execute(
         """
         INSERT INTO activity_details_run(
@@ -731,7 +726,7 @@ def upsert_activity_run_details(conn: sqlite3.Connection, values: dict) -> None:
 
 
 def process():
-    if not DB_PATH.exists():
+    if not db.db_exists():
         raise SystemExit("DB not initialized. Run scripts/init_db.py")
 
     started_at = datetime.now(timezone.utc)
@@ -743,7 +738,7 @@ def process():
     status = "running"
     message = None
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with db.connect() as conn:
         configure_sqlite(conn)
         conn.execute(
             """

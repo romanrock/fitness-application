@@ -1,17 +1,25 @@
-import sqlite3
 from pathlib import Path
 
+from packages import db
+
+
 ROOT = Path(__file__).resolve().parents[1]
-DB_PATH = ROOT / "data" / "fitness.db"
-SCHEMA = ROOT / "database" / "schemas" / "schema.sql"
 
-DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-with sqlite3.connect(DB_PATH) as conn:
-    try:
-        conn.execute("PRAGMA foreign_keys=ON")
-    except sqlite3.OperationalError:
-        pass
-    conn.executescript(SCHEMA.read_text())
+def main() -> None:
+    schema = db.schema_path()
+    if not schema.exists():
+        raise SystemExit(f"Schema not found: {schema}")
 
-print(f"Initialized {DB_PATH}")
+    if not db.is_postgres():
+        db_path = ROOT / "data" / "fitness.db"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with db.connect() as conn:
+        db.configure_connection(conn)
+        conn.executescript(schema.read_text())
+    print(f"Initialized {schema}")
+
+
+if __name__ == "__main__":
+    main()

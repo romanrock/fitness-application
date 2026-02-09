@@ -11,6 +11,7 @@ services:
       - FITNESS_API_PORT=8000
       - FITNESS_AUTH_DISABLED=0
       - FITNESS_JWT_SECRET=${FITNESS_JWT_SECRET}
+      - FITNESS_DB_URL=${FITNESS_DB_URL}
       - FITNESS_DB_PATH=/app/data/fitness.db
       - FITNESS_RUN_INGEST_ON_START=0
       - STRAVA_API_ENABLED=${STRAVA_API_ENABLED:-0}
@@ -39,6 +40,7 @@ services:
       - ../strava-local-ingest:/app/strava-local-ingest
     environment:
       - RUN_MODE=prod
+      - FITNESS_DB_URL=${FITNESS_DB_URL}
       - FITNESS_DB_PATH=/app/data/fitness.db
       - STRAVA_LOCAL_PATH=/app/strava-local-ingest
       - RUN_STRAVA_SYNC=${RUN_STRAVA_SYNC:-0}

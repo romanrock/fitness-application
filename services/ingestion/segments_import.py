@@ -1,21 +1,12 @@
 import json
-import sqlite3
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-from packages.config import DB_PATH, STRAVA_LOCAL_PATH
-
-
-def configure_sqlite(conn):
-    try:
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA busy_timeout=5000")
-        conn.execute("PRAGMA foreign_keys=ON")
-    except sqlite3.OperationalError:
-        return
+from packages import db
+from packages.config import STRAVA_LOCAL_PATH
 
 
 def load_segments():
@@ -34,8 +25,8 @@ def main():
         print("No segments_best.json found or empty.")
         return
     segments_dir = STRAVA_LOCAL_PATH / "data" / "segments"
-    with sqlite3.connect(DB_PATH) as conn:
-        configure_sqlite(conn)
+    with db.connect() as conn:
+        db.configure_connection(conn)
         cur = conn.cursor()
         for scope, segments in payload.items():
             if not isinstance(segments, dict):

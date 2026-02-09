@@ -96,6 +96,12 @@ make docker-build
 ```
 This validates the docker compose config and builds images without starting containers.
 
+## Postgres (optional)
+Set `FITNESS_DB_URL` (e.g. `postgresql://user:pass@localhost:5432/fitness`) and run:
+```bash
+python3 scripts/migrate_db.py
+```
+
 ## Production deployment (single instance)
 1) Set environment (recommended via a local `.env` file, not committed):
 ```
