@@ -50,7 +50,7 @@ This is a parkable, staged plan to take the fitness-platform from local/dev to p
   - Added per-step ingestion metrics (duration + failures) for worker + API sync
   - Added dead-letter visibility endpoint: `GET /api/job_dead_letters`
 
-## Phase 4 — Observability
+## Phase 4 — Observability (complete; Sentry optional)
 - Structured logs, correlation IDs
 - Metrics (Prometheus/OpenTelemetry)
 - Error reporting (Sentry or similar)
