@@ -56,6 +56,7 @@ This is a parkable, staged plan to take the fitness-platform from local/dev to p
 - Error reporting (Sentry or similar)
   - Added request‑ID + structured request logging
   - Added lightweight `/metrics` endpoint (Prometheus‑style, self‑host friendly)
+  - Added optional Sentry integration (API + worker via env)
 
 ## Phase 5 — API quality
 - Versioned API contracts

@@ -12,6 +12,7 @@ from packages.config import (
     REFRESH_SECONDS,
     RUN_MODE,
 )
+from packages.error_reporting import init_error_reporting
 from packages.ingestion_runner import run_ingestion_pipeline
 from packages.logging_utils import setup_logging
 from packages.request_context import request_id_var
@@ -27,6 +28,7 @@ from .routes import sync as sync_routes
 
 
 setup_logging()
+init_error_reporting("api", enable_fastapi=True)
 logger = logging.getLogger("fitness.api")
 
 app = FastAPI(title="Fitness Platform API")

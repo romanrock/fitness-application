@@ -24,6 +24,7 @@ from packages.config import (
     PIPELINE_FAIL_THRESHOLD,
     PIPELINE_COOLDOWN_SEC,
 )
+from packages.error_reporting import init_error_reporting
 from packages.logging_utils import setup_logging
 from packages.pipeline_lock import pipeline_lock
 from packages.job_state import (
@@ -39,6 +40,7 @@ from packages.request_context import job_run_context
 
 
 setup_logging()
+init_error_reporting("worker")
 logger = logging.getLogger("fitness.worker")
 
 
