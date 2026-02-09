@@ -73,7 +73,7 @@ This is a parkable, staged plan to take the fitness-platform from local/dev to p
   - Cache: cache insights payloads with short TTL + invalidate on pipeline run
   - Pre-aggregation: materialize 7d/28d/12w metrics to avoid heavy recompute
 
-## Phase 6 — UI + contracts
+## Phase 6 — UI + contracts (complete)
 - Remove mock data
 - API contract tests (frontend → backend)
 - Performance budgets + caching
