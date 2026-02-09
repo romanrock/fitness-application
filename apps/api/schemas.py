@@ -60,6 +60,36 @@ class LogoutResponse(BaseModel):
     status: str
 
 
+class JobStateEntry(BaseModel):
+    job_name: str
+    consecutive_failures: int
+    cooldown_until: Optional[str] = None
+    last_started_at: Optional[str] = None
+    last_finished_at: Optional[str] = None
+    last_status: Optional[str] = None
+    last_error: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class JobRunEntry(BaseModel):
+    id: Optional[int] = None
+    job_name: Optional[str] = None
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
+    status: Optional[str] = None
+    attempts: Optional[int] = None
+    error: Optional[str] = None
+    duration_sec: Optional[float] = None
+
+
+class JobsResponse(DBMissingResponse):
+    jobs: List[JobStateEntry] = Field(default_factory=list)
+
+
+class JobRunsResponse(DBMissingResponse):
+    runs: List[JobRunEntry] = Field(default_factory=list)
+
+
 class StatsResponse(DBMissingResponse):
     activities_raw: Optional[int] = None
     streams_raw: Optional[int] = None

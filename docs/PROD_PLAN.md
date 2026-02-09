@@ -32,7 +32,7 @@ This is a parkable, staged plan to take the fitness-platform from local/dev to p
   - Postgres implementation started: DB_URL support + Postgres schema/migrations added
   - Local Postgres test setup added: docker-compose.postgres.yml + scripts/pg_local_setup.sh
 
-## Phase 3 — Reliability & jobs
+## Phase 3 — Reliability & jobs (in progress)
 - Worker supervision + retry/backoff + circuit breakers
 - Job scheduling with visibility + dead-letter handling
 - Metrics on ingestion/processing latency and failure rate
@@ -45,6 +45,7 @@ This is a parkable, staged plan to take the fitness-platform from local/dev to p
     - Trigger ingestion on event
     - Fallback to low‑frequency poll (safety net)
   - Note: `run_all.js` remains **local‑only** for backfills; prod uses API polling/webhooks
+  - Added job visibility endpoints: `GET /api/jobs`, `GET /api/job_runs`
 
 ## Phase 4 — Observability
 - Structured logs, correlation IDs

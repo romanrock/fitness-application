@@ -20,6 +20,7 @@ from .routes import activities as activities_routes
 from .routes import auth as auth_routes
 from .routes import health as health_routes
 from .routes import insights as insights_routes
+from .routes import jobs as jobs_routes
 from .routes import metrics as metrics_routes
 from .routes import segments as segments_routes
 from .routes import sync as sync_routes
@@ -109,6 +110,7 @@ app.include_router(health_routes.router)
 app.include_router(auth_routes.router)
 app.include_router(activities_routes.router_public)
 app.include_router(metrics_routes.router)
+app.include_router(jobs_routes.router)
 
 app.include_router(health_routes.router, prefix="/api")
 app.include_router(auth_routes.router, prefix="/api")
@@ -118,6 +120,7 @@ app.include_router(insights_routes.router, prefix="/api")
 app.include_router(segments_routes.router, prefix="/api")
 app.include_router(sync_routes.router, prefix="/api")
 app.include_router(metrics_routes.router, prefix="/api")
+app.include_router(jobs_routes.router, prefix="/api")
 
 app.include_router(health_routes.router, prefix="/api/v1")
 app.include_router(auth_routes.router, prefix="/api/v1")
@@ -127,3 +130,4 @@ app.include_router(insights_routes.router, prefix="/api/v1")
 app.include_router(segments_routes.router, prefix="/api/v1")
 app.include_router(sync_routes.router, prefix="/api/v1")
 app.include_router(metrics_routes.router, prefix="/api/v1")
+app.include_router(jobs_routes.router, prefix="/api/v1")
