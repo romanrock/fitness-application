@@ -85,6 +85,12 @@ docker compose up --build
 ```
 Note: Docker setup is pending on machines without Docker installed. Revisit once Docker Desktop (or Colima) is available locally.
 
+## Docker build validation (Phase 0)
+```bash
+make docker-build
+```
+This validates the docker compose config and builds images without starting containers.
+
 ## Production deployment (single instance)
 1) Set environment (recommended via a local `.env` file, not committed):
 ```

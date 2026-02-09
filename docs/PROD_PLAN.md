@@ -2,12 +2,12 @@
 
 This is a parkable, staged plan to take the fitness-platform from local/dev to production readiness.
 
-## Phase 0 — Baseline safety
-- Env config + venv setup
-- Run split (API/worker/dev)
-- Pipeline health + duration
-- Basic tests + Jenkins steps
-- Docker artifacts (not validated)
+## Phase 0 — Baseline safety (complete)
+- Env config + venv setup (`scripts/setup_env.py`, `.venv` bootstrap in `scripts/run_dev.py`)
+- Run split (API/worker/dev) (`scripts/run_api.py`, `scripts/run_worker.py`, `scripts/run_dev.py`)
+- Pipeline health + duration (`/api/health` exposes latest `pipeline_runs`)
+- Basic tests + Jenkins steps (`scripts/run_tests.py`, `Jenkinsfile`, `scripts/smoke_api.py`)
+- Docker artifacts validated (`scripts/verify_docker.sh`, `make docker-build`)
 
 ## Phase 1 — Security & identity
 - JWT hardening: expiry enforcement, refresh tokens, rotation, revocation
