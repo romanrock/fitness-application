@@ -88,6 +88,7 @@ export default function App() {
   const [assistantLoading, setAssistantLoading] = useState(false);
   const [assistantError, setAssistantError] = useState(null);
   const [assistantFeedback, setAssistantFeedback] = useState(null);
+  const [assistantAutoRequested, setAssistantAutoRequested] = useState(false);
   const [contextForm, setContextForm] = useState({ mood: '', sleep: '', soreness: '', notes: '' });
   const [contextStatus, setContextStatus] = useState(null);
 
@@ -192,6 +193,24 @@ export default function App() {
       setAssistantLoading(false);
     }
   }, [assistantQuestion, contextForm, apiFetch]);
+
+  useEffect(() => {
+    if (!assistantOpen) {
+      if (assistantAutoRequested) setAssistantAutoRequested(false);
+      return;
+    }
+    if (assistantAutoRequested || assistantLoading || assistantResponse) return;
+    if (!assistantQuestion.trim()) return;
+    setAssistantAutoRequested(true);
+    handleAskAssistant();
+  }, [
+    assistantOpen,
+    assistantAutoRequested,
+    assistantLoading,
+    assistantResponse,
+    assistantQuestion,
+    handleAskAssistant
+  ]);
 
   const handleContextSubmit = useCallback(async () => {
     setContextStatus(null);
