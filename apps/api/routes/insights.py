@@ -1,7 +1,8 @@
 import json
 import time
 import statistics
-from typing import Dict
+from datetime import datetime, timezone, timedelta
+from typing import Dict, List
 
 from fastapi import APIRouter, Depends
 
@@ -365,11 +366,122 @@ def insights_context(payload: InsightsContextRequest, user=Depends(get_current_u
 
 
 @router.post("/insights/evaluate", response_model=InsightsEvaluateResponse)
+def _parse_dt(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _trend_label(value: float | None, better_lower: bool, threshold: float = 0.5) -> str:
+    if value is None:
+        return "unknown"
+    if abs(value) < threshold:
+        return "flat"
+    improving = value < 0 if better_lower else value > 0
+    return "improving" if improving else "declining"
+
+
 def insights_evaluate(payload: InsightsEvaluateRequest, user=Depends(get_current_user)):
     if not db_exists():
         return {"db": "missing"}
-    _ = user  # placeholder for future personalization
-    return {"status": "pending", "answer": None}
+    recommendations: List[str] = []
+    follow_ups: List[str] = []
+    dist_7d_km = None
+    dist_28d_km = None
+    pace_trend = None
+    hr_trend = None
+    last_run_at = None
+    has_hr = False
+
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT week, distance_m, avg_pace_sec, avg_hr_norm, monotony, strain
+            FROM metrics_weekly
+            WHERE user_id = ?
+            ORDER BY week DESC
+            LIMIT 12
+            """,
+            (user["id"],),
+        )
+        rows = cur.fetchall()
+        if rows:
+            dist_7d_km = (rows[0][1] or 0) / 1000.0
+            dist_28d_km = sum((r[1] or 0) for r in rows[:4]) / 1000.0
+            pace_series = [r[2] for r in reversed(rows) if r[2] is not None]
+            hr_series = [r[3] for r in reversed(rows) if r[3] is not None]
+            has_hr = bool(hr_series)
+            pace_trend = linear_slope(pace_series)
+            hr_trend = linear_slope(hr_series)
+
+        cur.execute(
+            """
+            SELECT MAX(start_time)
+            FROM activities
+            WHERE user_id = ? AND lower(activity_type) = 'run'
+            """,
+            (user["id"],),
+        )
+        row = cur.fetchone()
+        last_run_at = _parse_dt(row[0] if row else None)
+
+        cur.execute(
+            """
+            SELECT COUNT(*)
+            FROM context_events
+            WHERE user_id = ?
+              AND occurred_at >= ?
+            """,
+            (user["id"], (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()),
+        )
+        recent_context = (cur.fetchone() or [0])[0]
+
+    if dist_28d_km is None or dist_28d_km == 0:
+        recommendations.append("Start with an easy 20–30 min run or walk today.")
+        recommendations.append("Aim for 2–3 short sessions this week to rebuild consistency.")
+    else:
+        if dist_7d_km == 0:
+            recommendations.append("You haven't run this week — do an easy 20–40 min run today.")
+        trend = _trend_label(pace_trend, better_lower=True, threshold=0.5)
+        if trend == "improving":
+            recommendations.append("Keep one quality session and one long easy run this week.")
+        elif trend == "declining":
+            recommendations.append("Prioritize recovery: keep runs easy and add one rest day.")
+        else:
+            recommendations.append("Maintain volume with mostly easy runs and one moderate session.")
+
+    if not has_hr:
+        follow_ups.append("Do you have HR data available? It improves trend accuracy.")
+    if last_run_at is None or (datetime.now(timezone.utc) - last_run_at).days >= 14:
+        follow_ups.append("When did you last train and how do you feel today?")
+    if recent_context == 0:
+        follow_ups.append("How was your sleep and soreness today?")
+
+    trend_pace = _trend_label(pace_trend, better_lower=True, threshold=0.5)
+    trend_hr = _trend_label(hr_trend, better_lower=True, threshold=0.3)
+    pace_clause = f"Pace is {trend_pace}"
+    if pace_trend is not None:
+        pace_clause += f" ({pace_trend:+.2f} sec/km/wk)"
+    hr_clause = f"HR is {trend_hr}"
+    if hr_trend is not None:
+        hr_clause += f" ({hr_trend:+.2f} bpm/wk)"
+    volume_clause = "Last 7d volume: n/a"
+    if dist_7d_km is not None:
+        volume_clause = f"Last 7d volume: {dist_7d_km:.1f} km"
+    if dist_28d_km is not None:
+        volume_clause += f", 28d: {dist_28d_km:.1f} km"
+    answer = f"Trend summary: {pace_clause}, {hr_clause}. {volume_clause}. This is general guidance; listen to your body."
+
+    return {
+        "status": "ok",
+        "answer": answer,
+        "recommendations": recommendations,
+        "follow_ups": follow_ups,
+    }
 
 
 @router.get("/insights/series", response_model=InsightsSeriesResponse)

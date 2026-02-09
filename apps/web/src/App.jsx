@@ -11,6 +11,11 @@ import Login from './screens/Login.jsx';
 const API_BASE = '/api/v1';
 const OVERVIEW_CACHE_KEY = 'fitness_overview_cache';
 const OVERVIEW_CACHE_TTL_MS = 5 * 60 * 1000;
+const ASSISTANT_PROMPTS = [
+  'What should I do today?',
+  'How am I trending?',
+  'Am I training too hard?'
+];
 
 const EMPTY_OVERVIEW = {
   weekLabel: '—',
@@ -77,6 +82,14 @@ export default function App() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState(null);
   const [profileData] = useState(EMPTY_PROFILE);
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [assistantQuestion, setAssistantQuestion] = useState(ASSISTANT_PROMPTS[0]);
+  const [assistantResponse, setAssistantResponse] = useState(null);
+  const [assistantLoading, setAssistantLoading] = useState(false);
+  const [assistantError, setAssistantError] = useState(null);
+  const [assistantFeedback, setAssistantFeedback] = useState(null);
+  const [contextForm, setContextForm] = useState({ mood: '', sleep: '', soreness: '', notes: '' });
+  const [contextStatus, setContextStatus] = useState(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -144,6 +157,70 @@ export default function App() {
     }
     return res;
   }, [authToken, clearToken]);
+
+  const postContextEvent = useCallback(async (eventType, payload) => {
+    const res = await apiFetch('/insights/context', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event_type: eventType, payload, source: 'ui' })
+    });
+    return res.json();
+  }, [apiFetch]);
+
+  const handleAskAssistant = useCallback(async () => {
+    if (!assistantQuestion.trim()) return;
+    setAssistantLoading(true);
+    setAssistantError(null);
+    setAssistantResponse(null);
+    setAssistantFeedback(null);
+    try {
+      const context = {
+        mood: contextForm.mood || null,
+        sleep: contextForm.sleep ? Number(contextForm.sleep) : null,
+        soreness: contextForm.soreness || null
+      };
+      const res = await apiFetch('/insights/evaluate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: assistantQuestion, context })
+      });
+      const json = await res.json();
+      setAssistantResponse(json);
+    } catch {
+      setAssistantError('Unable to reach the assistant right now.');
+    } finally {
+      setAssistantLoading(false);
+    }
+  }, [assistantQuestion, contextForm, apiFetch]);
+
+  const handleContextSubmit = useCallback(async () => {
+    setContextStatus(null);
+    try {
+      const payload = {
+        mood: contextForm.mood || null,
+        sleep: contextForm.sleep ? Number(contextForm.sleep) : null,
+        soreness: contextForm.soreness || null,
+        notes: contextForm.notes || null
+      };
+      await postContextEvent('check_in', payload);
+      setContextStatus('Saved.');
+    } catch {
+      setContextStatus('Unable to save right now.');
+    }
+  }, [contextForm, postContextEvent]);
+
+  const handleFeedback = useCallback((value) => {
+    setAssistantFeedback(value);
+    try {
+      void postContextEvent('assistant_feedback', {
+        question: assistantQuestion,
+        helpful: value,
+        answer: assistantResponse?.answer || null
+      });
+    } catch {
+      // ignore feedback failures
+    }
+  }, [assistantQuestion, assistantResponse, postContextEvent]);
 
   const triggerSync = useCallback(async ({ force = false, tokenOverride = null } = {}) => {
     if (syncInFlightRef.current) return;
@@ -485,6 +562,7 @@ export default function App() {
           lastUpdate={lastUpdate}
           loading={overviewLoading}
           error={overviewError}
+          onOpenAssistant={() => setAssistantOpen(true)}
           onSelectActivityType={(type, range) => {
             applyActivityFilter(type, range);
             if (range === 'all') {
@@ -581,11 +659,153 @@ export default function App() {
         />
       )}
       {screen === 'profile' && <Profile contract={profileData} />}
+      {assistantOpen && <div className="assistant-backdrop" onClick={() => setAssistantOpen(false)} />}
+      <div className={`assistant-drawer ${assistantOpen ? 'is-open' : ''}`}>
+        <div className="assistant-panel">
+          <div className="assistant-header">
+            <div>
+              <h2>Assistant</h2>
+              <div className="muted">Daily guidance + trend summary</div>
+            </div>
+            <button className="icon-btn" type="button" onClick={() => setAssistantOpen(false)}>Close</button>
+          </div>
+
+          <div className="assistant-section">
+            <div className="assistant-label">Ask</div>
+            <div className="assistant-row">
+              {ASSISTANT_PROMPTS.map((prompt) => (
+                <button
+                  key={prompt}
+                  className="assistant-chip"
+                  type="button"
+                  onClick={() => setAssistantQuestion(prompt)}
+                >
+                  {prompt}
+                </button>
+              ))}
+            </div>
+            <textarea
+              className="assistant-input"
+              rows={2}
+              value={assistantQuestion}
+              onChange={(e) => setAssistantQuestion(e.target.value)}
+            />
+            <div className="assistant-actions">
+              <button className="primary-btn" type="button" onClick={handleAskAssistant} disabled={assistantLoading}>
+                {assistantLoading ? 'Thinking…' : 'Ask'}
+              </button>
+              {assistantError && <span className="muted">{assistantError}</span>}
+            </div>
+          </div>
+
+          <div className="assistant-section">
+            <div className="assistant-label">Response</div>
+            <div className="assistant-response card">
+              {assistantResponse?.answer ? (
+                <>
+                  <p>{assistantResponse.answer}</p>
+                  {assistantResponse.recommendations?.length > 0 && (
+                    <>
+                      <div className="assistant-subtitle">Recommendations</div>
+                      <ul>
+                        {assistantResponse.recommendations.map((rec, idx) => (
+                          <li key={idx}>{rec}</li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                  {assistantResponse.follow_ups?.length > 0 && (
+                    <>
+                      <div className="assistant-subtitle">Follow‑ups</div>
+                      <ul>
+                        {assistantResponse.follow_ups.map((q, idx) => (
+                          <li key={idx}>{q}</li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                </>
+              ) : (
+                <div className="muted">Ask a question to see guidance.</div>
+              )}
+            </div>
+            {assistantResponse?.answer && (
+              <div className="assistant-actions">
+                <span className="muted">Helpful?</span>
+                <button
+                  className={`assistant-chip ${assistantFeedback === true ? 'is-active' : ''}`}
+                  type="button"
+                  onClick={() => handleFeedback(true)}
+                >
+                  Yes
+                </button>
+                <button
+                  className={`assistant-chip ${assistantFeedback === false ? 'is-active' : ''}`}
+                  type="button"
+                  onClick={() => handleFeedback(false)}
+                >
+                  No
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="assistant-section">
+            <div className="assistant-label">Share context</div>
+            <div className="assistant-grid">
+              <label className="assistant-field">
+                Mood
+                <select value={contextForm.mood} onChange={(e) => setContextForm({ ...contextForm, mood: e.target.value })}>
+                  <option value="">Select…</option>
+                  <option value="great">Great</option>
+                  <option value="good">Good</option>
+                  <option value="ok">OK</option>
+                  <option value="tired">Tired</option>
+                </select>
+              </label>
+              <label className="assistant-field">
+                Sleep (hours)
+                <input
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  value={contextForm.sleep}
+                  onChange={(e) => setContextForm({ ...contextForm, sleep: e.target.value })}
+                />
+              </label>
+              <label className="assistant-field">
+                Soreness
+                <select value={contextForm.soreness} onChange={(e) => setContextForm({ ...contextForm, soreness: e.target.value })}>
+                  <option value="">Select…</option>
+                  <option value="none">None</option>
+                  <option value="mild">Mild</option>
+                  <option value="high">High</option>
+                </select>
+              </label>
+              <label className="assistant-field assistant-field--full">
+                Notes
+                <textarea
+                  rows={3}
+                  value={contextForm.notes}
+                  onChange={(e) => setContextForm({ ...contextForm, notes: e.target.value })}
+                />
+              </label>
+            </div>
+            <div className="assistant-actions">
+              <button className="primary-btn" type="button" onClick={handleContextSubmit}>
+                Save context
+              </button>
+              {contextStatus && <span className="muted">{contextStatus}</span>}
+            </div>
+          </div>
+        </div>
+      </div>
       {screen !== 'login' && (
         <nav className="bottom-nav">
           <button className={`nav-item ${screen === 'overview' ? 'is-active' : ''}`} type="button" onClick={() => { setPreviousScreen('overview'); navigate('/dashboard'); }}>Home</button>
           <button className={`nav-item ${screen === 'activities' ? 'is-active' : ''}`} type="button" onClick={() => { setPreviousScreen('activities'); navigate('/activities'); }}>Activities</button>
           <button className={`nav-item ${screen === 'profile' ? 'is-active' : ''}`} type="button" onClick={() => { setPreviousScreen('profile'); navigate('/profile'); }}>Profile</button>
+          <button className="nav-item" type="button" onClick={() => setAssistantOpen(true)}>Assistant</button>
         </nav>
       )}
     </div>

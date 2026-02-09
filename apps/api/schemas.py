@@ -282,6 +282,8 @@ class InsightsEvaluateRequest(BaseModel):
 class InsightsEvaluateResponse(DBMissingResponse):
     status: str
     answer: Optional[str] = None
+    recommendations: List[str] = Field(default_factory=list)
+    follow_ups: List[str] = Field(default_factory=list)
 
 
 class SegmentBestEntry(BaseModel):

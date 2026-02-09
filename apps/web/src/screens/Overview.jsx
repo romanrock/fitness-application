@@ -1,7 +1,7 @@
 import MetricCard from '../components/MetricCard.jsx';
 import InsightCard from '../components/InsightCard.jsx';
 
-export default function Overview({ contract, onSelectActivityType, onSelectInsight, lastUpdate, loading, error }) {
+export default function Overview({ contract, onSelectActivityType, onSelectInsight, lastUpdate, loading, error, onOpenAssistant }) {
   if (loading) {
     return (
       <div className="screen">
@@ -24,7 +24,7 @@ export default function Overview({ contract, onSelectActivityType, onSelectInsig
           <div className="muted">This Week: {contract.weekLabel}</div>
           {lastUpdate && <div className="muted">Last updated: {lastUpdate}</div>}
         </div>
-        <button className="icon-btn" type="button">•••</button>
+        <button className="icon-btn" type="button" onClick={onOpenAssistant}>Assistant</button>
       </div>
 
       <div className="section">

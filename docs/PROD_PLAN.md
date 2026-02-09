@@ -87,7 +87,7 @@ This is a parkable, staged plan to take the fitness-platform from local/dev to p
   - `POST /insights/evaluate`
 - No UI wiring or LLM calls yet
 
-## Phase 6.6 — AI assistant (post‑hardening)
+## Phase 6.6 — AI assistant (post‑hardening; in progress)
 - Deterministic default recommendations
 - Context drawer UI + feedback inputs
 - LLM personalization with guardrails
