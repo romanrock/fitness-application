@@ -137,6 +137,11 @@ docker compose up -d --build
 python3 scripts/create_user.py yourname yourpassword --assign-existing
 ```
 
+Optional: verify Sentry is wired (requires `FITNESS_SENTRY_DSN`):
+```bash
+python3 scripts/sentry_test.py
+```
+
 ## Backups (SQLite)
 Use the helper script (inside the container or on the host with the DB volume mounted):
 ```bash
