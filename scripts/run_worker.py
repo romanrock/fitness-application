@@ -1,10 +1,12 @@
+import logging
 import subprocess
+from contextlib import nullcontext
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-import sys
 import random
+import sys
 import threading
 import time
-from datetime import datetime, timedelta, timezone
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -22,6 +24,7 @@ from packages.config import (
     PIPELINE_FAIL_THRESHOLD,
     PIPELINE_COOLDOWN_SEC,
 )
+from packages.logging_utils import setup_logging
 from packages.pipeline_lock import pipeline_lock
 from packages.job_state import (
     load_job_state,
@@ -32,6 +35,11 @@ from packages.job_state import (
     record_dead_letter,
 )
 from packages.metrics import inc, observe
+from packages.request_context import job_run_context
+
+
+setup_logging()
+logger = logging.getLogger("fitness.worker")
 
 
 def run(cmd, cwd=None):
@@ -46,7 +54,7 @@ def run_with_retry(cmd, cwd=None, retries=2, delay=3):
         except subprocess.CalledProcessError as exc:
             if attempt >= retries:
                 raise
-            print(f"Retrying after error: {exc}")
+            logger.warning("Retrying after error: %s", exc)
             time.sleep(delay)
 
 
@@ -61,7 +69,7 @@ def run_pipeline_once():
     py = venv_python() or sys.executable
     with pipeline_lock() as acquired:
         if not acquired:
-            print("Pipeline lock active; skipping ingestion run.")
+            logger.info("Pipeline lock active; skipping ingestion run.")
             return
         if not db.db_exists():
             _run_step("init_db", [str(py), str(ROOT / "scripts" / "init_db.py")])
@@ -71,12 +79,12 @@ def run_pipeline_once():
         elif RUN_STRAVA_SYNC and (STRAVA_LOCAL_PATH / "run_all.js").exists():
             _run_step("strava_local", ["node", str(STRAVA_LOCAL_PATH / "run_all.js")], cwd=str(STRAVA_LOCAL_PATH))
         elif RUN_STRAVA_SYNC:
-            print(f"STRAVA_LOCAL_PATH missing run_all.js: {STRAVA_LOCAL_PATH}")
+            logger.warning("STRAVA_LOCAL_PATH missing run_all.js: %s", STRAVA_LOCAL_PATH)
         _run_step("strava_import", [str(py), str(ROOT / "services" / "ingestion" / "strava_import.py")])
         _run_step("weather_import", [str(py), str(ROOT / "services" / "ingestion" / "weather_import.py")])
         _run_step("segments_import", [str(py), str(ROOT / "services" / "ingestion" / "segments_import.py")])
         _run_step("pipeline", [str(py), str(ROOT / "services" / "processing" / "pipeline.py")])
-        print("Pipeline complete")
+        logger.info("Pipeline complete")
 
 
 def _backoff_seconds(attempt: int) -> float:
@@ -128,7 +136,7 @@ def _should_skip_for_cooldown() -> bool:
                 return False
             if datetime.now(timezone.utc) < until:
                 remaining = (until - datetime.now(timezone.utc)).total_seconds()
-                print(f"Pipeline cooldown active; skipping for {remaining:.0f}s.")
+                logger.info("Pipeline cooldown active; skipping for %.0fs.", remaining)
                 return True
     return False
 
@@ -174,10 +182,12 @@ def schedule_pipeline(stop_event: threading.Event):
                 db.configure_connection(conn)
                 mark_stale_runs(conn, "pipeline", REFRESH_SECONDS * 2)
                 run_id = start_job_run(conn, "pipeline")
-        try:
-            success, error, attempts = _run_with_retries()
-        except subprocess.CalledProcessError as exc:
-            success, error, attempts = False, str(exc), PIPELINE_MAX_RETRIES + 1
+        with job_run_context(run_id) if run_id else nullcontext():
+            logger.info("Pipeline run started")
+            try:
+                success, error, attempts = _run_with_retries()
+            except subprocess.CalledProcessError as exc:
+                success, error, attempts = False, str(exc), PIPELINE_MAX_RETRIES + 1
         finished_at = datetime.now(timezone.utc)
         if run_id and db.db_exists():
             with db.connect() as conn:
@@ -190,7 +200,9 @@ def schedule_pipeline(stop_event: threading.Event):
                     error,
                     (finished_at - started_at).total_seconds(),
                 )
-        _record_job_state(success, error, attempts, started_at, finished_at)
+        with job_run_context(run_id) if run_id else nullcontext():
+            _record_job_state(success, error, attempts, started_at, finished_at)
+            logger.info("Pipeline run finished status=%s attempts=%s", "ok" if success else "error", attempts)
         for _ in range(REFRESH_SECONDS):
             if stop_event.is_set():
                 return
@@ -212,10 +224,12 @@ def manual_trigger(stop_event: threading.Event):
                 with db.connect() as conn:
                     db.configure_connection(conn)
                     run_id = start_job_run(conn, "pipeline")
-            try:
-                success, error, attempts = _run_with_retries()
-            except subprocess.CalledProcessError as exc:
-                success, error, attempts = False, str(exc), PIPELINE_MAX_RETRIES + 1
+            with job_run_context(run_id) if run_id else nullcontext():
+                logger.info("Manual pipeline run started")
+                try:
+                    success, error, attempts = _run_with_retries()
+                except subprocess.CalledProcessError as exc:
+                    success, error, attempts = False, str(exc), PIPELINE_MAX_RETRIES + 1
             finished_at = datetime.now(timezone.utc)
             if run_id and db.db_exists():
                 with db.connect() as conn:
@@ -228,7 +242,9 @@ def manual_trigger(stop_event: threading.Event):
                         error,
                         (finished_at - started_at).total_seconds(),
                     )
-            _record_job_state(success, error, attempts, started_at, finished_at)
+            with job_run_context(run_id) if run_id else nullcontext():
+                _record_job_state(success, error, attempts, started_at, finished_at)
+                logger.info("Manual pipeline run finished status=%s attempts=%s", "ok" if success else "error", attempts)
 
 
 def main():
@@ -242,9 +258,9 @@ def main():
     trigger = threading.Thread(target=manual_trigger, args=(stop_event,), daemon=True)
     trigger.start()
 
-    print("Worker running. Pipeline runs every hour.")
-    print("Type 'r' + Enter to run on demand.")
-    print("Press Ctrl+C to stop.")
+    logger.info("Worker running. Pipeline runs every hour.")
+    logger.info("Type 'r' + Enter to run on demand.")
+    logger.info("Press Ctrl+C to stop.")
     try:
         while True:
             time.sleep(1)
