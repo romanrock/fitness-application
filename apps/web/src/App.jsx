@@ -9,6 +9,34 @@ import Performance from './screens/Performance.jsx';
 import Login from './screens/Login.jsx';
 
 const API_BASE = '/api/v1';
+const OVERVIEW_CACHE_KEY = 'fitness_overview_cache';
+const OVERVIEW_CACHE_TTL_MS = 5 * 60 * 1000;
+
+const EMPTY_OVERVIEW = {
+  weekLabel: '—',
+  weekStart: null,
+  allTimeCards: [],
+  weeklyCards: [],
+  insights: [],
+  performance: []
+};
+
+const EMPTY_ACTIVITY = {
+  activityId: null,
+  name: '',
+  subtitle: '',
+  weather: null,
+  heroStats: [],
+  tabs: ['Overview', 'Laps', 'Charts'],
+  overview: [],
+  charts: { pace: null, hr: null, cadence: null, elevation: null },
+  laps: [],
+  lapTotals: null,
+  segments: null
+};
+
+const EMPTY_ACTIVITIES = { title: 'Activities', filterLabel: 'All activities', items: [] };
+const EMPTY_PROFILE = { name: '', age: null, height_cm: null, weight_kg: null, resting_hr: null };
 
 export default function App() {
   const isDev = import.meta?.env?.DEV;
@@ -22,21 +50,6 @@ export default function App() {
   );
   const [screen, setScreen] = useState('overview');
   const [previousScreen, setPreviousScreen] = useState('overview');
-  const emptyOverview = { weekLabel: '—', weekStart: null, allTimeCards: [], weeklyCards: [], insights: [], performance: [] };
-  const emptyActivity = {
-    activityId: null,
-    name: '',
-    subtitle: '',
-    weather: null,
-    heroStats: [],
-    tabs: ['Overview', 'Laps', 'Charts'],
-    overview: [],
-    charts: { pace: null, hr: null, cadence: null, elevation: null },
-    laps: [],
-    lapTotals: null,
-    segments: null
-  };
-  const emptyActivities = { title: 'Activities', filterLabel: 'All activities', items: [] };
   const tokenKey = 'fitness_token';
   const [authToken, setAuthToken] = useState(() => {
     if (typeof window === 'undefined') return null;
@@ -45,15 +58,15 @@ export default function App() {
   const [authRequired, setAuthRequired] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState(null);
-  const [overviewData, setOverviewData] = useState(emptyOverview);
+  const [overviewData, setOverviewData] = useState(EMPTY_OVERVIEW);
   const [activityList, setActivityList] = useState([]);
-  const [activeActivity, setActiveActivity] = useState(emptyActivity);
+  const [activeActivity, setActiveActivity] = useState(EMPTY_ACTIVITY);
   const [activeInsight, setActiveInsight] = useState(null);
   const [activeId, setActiveId] = useState(null);
   const [lastUpdate, setLastUpdate] = useState(null);
   const [lastUpdateRaw, setLastUpdateRaw] = useState(null);
   const [syncNonce, setSyncNonce] = useState(0);
-  const [activitiesData, setActivitiesData] = useState(emptyActivities);
+  const [activitiesData, setActivitiesData] = useState(EMPTY_ACTIVITIES);
   const [activityFilter, setActivityFilter] = useState({ type: 'run', range: 'all', start: null, end: null, label: 'All activities' });
   const [activityOffset, setActivityOffset] = useState(0);
   const [activityHasMore, setActivityHasMore] = useState(true);
@@ -63,13 +76,23 @@ export default function App() {
   const [overviewError, setOverviewError] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState(null);
-  const [profileData] = useState({
-    name: '',
-    age: null,
-    height_cm: null,
-    weight_kg: null,
-    resting_hr: null
-  });
+  const [profileData] = useState(EMPTY_PROFILE);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const raw = window.localStorage.getItem(OVERVIEW_CACHE_KEY);
+    if (!raw) return;
+    try {
+      const cached = JSON.parse(raw);
+      if (!cached?.data || !cached?.cachedAt) return;
+      if (Date.now() - cached.cachedAt > OVERVIEW_CACHE_TTL_MS) return;
+      setOverviewData(cached.data);
+      setLastUpdate(cached.lastUpdate || null);
+      setLastUpdateRaw(cached.lastUpdateRaw || null);
+    } catch {
+      // ignore cache parse errors
+    }
+  }, []);
 
   const navigate = useCallback((path) => {
     if (typeof window === 'undefined') return;
@@ -220,7 +243,7 @@ export default function App() {
       setActivityHasMore(activities.length === PAGE_SIZE);
     } catch {
       setActivityError('Failed to load activities.');
-      setActivitiesData({ ...emptyActivities, items: [], filterLabel: activityFilter.label });
+      setActivitiesData({ ...EMPTY_ACTIVITIES, items: [], filterLabel: activityFilter.label });
       setActivityHasMore(false);
     } finally {
       setActivityLoading(false);
@@ -345,30 +368,56 @@ export default function App() {
       setOverviewLoading(true);
       setOverviewError(null);
       try {
-        const healthRes = await apiFetch('/health');
-        const healthJson = await healthRes.json();
+        const [healthRes, weeklyRes, totalsAllRes, insightsRes] = await Promise.all([
+          apiFetch('/health'),
+          apiFetch('/weekly?limit=4'),
+          apiFetch('/activity_totals'),
+          apiFetch('/insights')
+        ]);
+        const [healthJson, weeklyJson, totalsAllJson, insightsJson] = await Promise.all([
+          healthRes.json(),
+          weeklyRes.json(),
+          totalsAllRes.json(),
+          insightsRes.json()
+        ]);
         setLastUpdateRaw(healthJson.last_update || null);
         setLastUpdate(formatLastUpdate(healthJson.last_update));
 
-        const weeklyRes = await apiFetch('/weekly?limit=4');
-        const weeklyJson = await weeklyRes.json();
         const weekly = weeklyJson.weekly || [];
-
         const weekStart = weekly[0]?.week || null;
         const weekRange = weekStart ? buildWeekRange(weekStart) : null;
 
-        const totalsAllRes = await apiFetch('/activity_totals');
-        const totalsAllJson = await totalsAllRes.json();
-        const totalsWeekRes = weekRange ? await apiFetch(`/activity_totals?start=${encodeURIComponent(weekRange.start)}&end=${encodeURIComponent(weekRange.end)}`) : null;
-        const totalsWeekJson = totalsWeekRes ? await totalsWeekRes.json() : { totals: [] };
+        let totalsWeekJson = { totals: [] };
+        if (weekRange) {
+          const totalsWeekRes = await apiFetch(
+            `/activity_totals?start=${encodeURIComponent(weekRange.start)}&end=${encodeURIComponent(weekRange.end)}`
+          );
+          totalsWeekJson = await totalsWeekRes.json();
+        }
 
-        const insightsRes = await apiFetch('/insights');
-        const insightsJson = await insightsRes.json();
         const { insights, performance } = buildInsights(insightsJson);
-        setOverviewData(buildOverview(weekly, totalsAllJson.totals || [], totalsWeekJson.totals || [], insights, performance));
+        const nextOverview = buildOverview(
+          weekly,
+          totalsAllJson.totals || [],
+          totalsWeekJson.totals || [],
+          insights,
+          performance
+        );
+        setOverviewData(nextOverview);
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem(
+            OVERVIEW_CACHE_KEY,
+            JSON.stringify({
+              data: nextOverview,
+              lastUpdate: formatLastUpdate(healthJson.last_update),
+              lastUpdateRaw: healthJson.last_update || null,
+              cachedAt: Date.now()
+            })
+          );
+        }
       } catch {
         setOverviewError('Failed to load dashboard data.');
-        if (!isDev) setOverviewData(emptyOverview);
+        if (!isDev) setOverviewData(EMPTY_OVERVIEW);
       } finally {
         setOverviewLoading(false);
       }
@@ -382,25 +431,36 @@ export default function App() {
       setDetailLoading(true);
       setDetailError(null);
       try {
-        const res = await apiFetch(`/activity/${activeId}`);
-        const detail = await res.json();
-        const summaryRes = await apiFetch(`/activity/${activeId}/summary`);
-        const summary = await summaryRes.json();
-        const seriesRes = await apiFetch(`/activity/${activeId}/series`);
-        const series = await seriesRes.json();
-        const routeRes = await apiFetch(`/activity/${activeId}/route`);
-        const route = await routeRes.json();
-        const lapsRes = await apiFetch(`/activity/${activeId}/laps`);
-        const lapsJson = await lapsRes.json();
-        const activitySegmentsRes = await apiFetch(`/activity/${activeId}/segments`);
-        const activitySegments = await activitySegmentsRes.json();
-        const segmentsRes = await apiFetch(`/segments_best`);
-        const segments = await segmentsRes.json();
+        const [
+          detailRes,
+          summaryRes,
+          seriesRes,
+          routeRes,
+          lapsRes,
+          activitySegmentsRes,
+          segmentsRes
+        ] = await Promise.all([
+          apiFetch(`/activity/${activeId}`),
+          apiFetch(`/activity/${activeId}/summary`),
+          apiFetch(`/activity/${activeId}/series`),
+          apiFetch(`/activity/${activeId}/route`),
+          apiFetch(`/activity/${activeId}/laps`),
+          apiFetch(`/activity/${activeId}/segments`),
+          apiFetch(`/segments_best`)
+        ]);
+        const [detail, summary, series, route, lapsJson, activitySegments, segments] = await Promise.all([
+          detailRes.json(),
+          summaryRes.json(),
+          seriesRes.json(),
+          routeRes.json(),
+          lapsRes.json(),
+          activitySegmentsRes.json(),
+          segmentsRes.json()
+        ]);
         setActiveActivity(buildActivityDetail(detail, summary, lapsJson.laps || [], series.series || {}, route.route || [], segments, activitySegments.segments || {}));
       } catch {
         setDetailError('Failed to load activity.');
-        if (isDev) setActiveActivity(activityDetailContract);
-        else setActiveActivity(emptyActivity);
+        setActiveActivity(EMPTY_ACTIVITY);
       } finally {
         setDetailLoading(false);
       }
@@ -532,9 +592,9 @@ export default function App() {
   );
 }
 
-function buildOverview(weekly, totalsAll, totalsWeek, insights = overviewContract.insights, performance = overviewContract.performance) {
+function buildOverview(weekly, totalsAll, totalsWeek, insights = EMPTY_OVERVIEW.insights, performance = EMPTY_OVERVIEW.performance) {
   const latest = weekly[0];
-  const weekLabel = latest ? latest.week : overviewContract.weekLabel;
+  const weekLabel = latest ? latest.week : EMPTY_OVERVIEW.weekLabel;
   const allTimeCards = buildSummaryCards(totalsAll);
   const weeklyCards = buildSummaryCards(totalsWeek);
   return {
@@ -548,7 +608,7 @@ function buildOverview(weekly, totalsAll, totalsWeek, insights = overviewContrac
 }
 
 function buildActivityDetail(detail, summary = {}, laps = [], series = {}, route = [], segments = {}, activitySegments = {}) {
-  if (!detail || detail.error) return activityDetailContract;
+  if (!detail || detail.error) return EMPTY_ACTIVITY;
   const weather = detail.weather;
   const weatherLabel = weather?.temp_c != null ? `${weather.temp_c}°C` : (weather?.avg_temp_c != null ? `${weather.avg_temp_c}°C` : 'n/a');
   const lapRows = laps.map((lap) => ({
