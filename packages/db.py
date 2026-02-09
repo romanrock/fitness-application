@@ -49,6 +49,10 @@ class DBCursor:
     def fetchall(self):
         return self._cursor.fetchall()
 
+    @property
+    def lastrowid(self):
+        return getattr(self._cursor, "lastrowid", None)
+
     def __iter__(self):
         return iter(self._cursor)
 
