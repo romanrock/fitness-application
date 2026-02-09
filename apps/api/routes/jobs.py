@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 
 from ..deps import get_current_user
-from ..schemas import JobRunsResponse, JobsResponse
+from ..schemas import JobDeadLettersResponse, JobRunsResponse, JobsResponse
 from ..utils import db_exists, dict_rows, get_db
 
 
@@ -49,3 +49,24 @@ def job_runs(limit: int = Query(50, ge=1, le=500), user=Depends(get_current_user
             return {"runs": list(dict_rows(cur))}
         except Exception:
             return {"runs": []}
+
+
+@router.get("/job_dead_letters", response_model=JobDeadLettersResponse)
+def job_dead_letters(limit: int = Query(50, ge=1, le=500), user=Depends(get_current_user)):
+    if not db_exists():
+        return {"db": "missing"}
+    with get_db() as conn:
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                """
+                SELECT id, job_name, failed_at, error, attempts, last_status
+                FROM job_dead_letters
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            )
+            return {"dead_letters": list(dict_rows(cur))}
+        except Exception:
+            return {"dead_letters": []}

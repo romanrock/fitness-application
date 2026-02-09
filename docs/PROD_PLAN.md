@@ -48,6 +48,7 @@ This is a parkable, staged plan to take the fitness-platform from local/dev to p
   - Added job visibility endpoints: `GET /api/jobs`, `GET /api/job_runs`
   - Added stale run cleanup + jittered backoff in worker
   - Added per-step ingestion metrics (duration + failures) for worker + API sync
+  - Added dead-letter visibility endpoint: `GET /api/job_dead_letters`
 
 ## Phase 4 — Observability
 - Structured logs, correlation IDs

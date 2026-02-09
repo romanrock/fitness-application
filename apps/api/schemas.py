@@ -90,6 +90,19 @@ class JobRunsResponse(DBMissingResponse):
     runs: List[JobRunEntry] = Field(default_factory=list)
 
 
+class JobDeadLetterEntry(BaseModel):
+    id: Optional[int] = None
+    job_name: Optional[str] = None
+    failed_at: Optional[str] = None
+    error: Optional[str] = None
+    attempts: Optional[int] = None
+    last_status: Optional[str] = None
+
+
+class JobDeadLettersResponse(DBMissingResponse):
+    dead_letters: List[JobDeadLetterEntry] = Field(default_factory=list)
+
+
 class StatsResponse(DBMissingResponse):
     activities_raw: Optional[int] = None
     streams_raw: Optional[int] = None
