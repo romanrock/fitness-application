@@ -18,3 +18,21 @@ jobs:
           script: |
             cd ${{ secrets.DEPLOY_PATH }}
             bash scripts/deploy.sh
+      - name: Smoke check (health)
+        env:
+          HEALTHCHECK_URL: ${{ secrets.HEALTHCHECK_URL }}
+        run: |
+          url="${HEALTHCHECK_URL}"
+          if [ -z "$url" ]; then
+            url="https://${{ secrets.EC2_HOST }}/api/health"
+          fi
+          echo "Checking $url"
+          for i in {1..20}; do
+            if curl -fsS "$url" >/dev/null 2>&1; then
+              echo "health ok"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "health check failed"
+          exit 1
