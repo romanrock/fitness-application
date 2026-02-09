@@ -1,8 +1,11 @@
 import json
+import logging
+import os
 import time
 import statistics
 from datetime import datetime, timezone, timedelta
 from typing import Dict, List
+from urllib import request, error
 
 from fastapi import APIRouter, Depends
 
@@ -21,6 +24,7 @@ from ..utils import compute_vdot, db_exists, get_db, get_last_update, linear_slo
 
 
 router = APIRouter()
+logger = logging.getLogger("fitness.api")
 
 CACHE_TTL_SECONDS = 45
 
@@ -383,6 +387,96 @@ def _trend_label(value: float | None, better_lower: bool, threshold: float = 0.5
     return "improving" if improving else "declining"
 
 
+def _extract_response_text(payload: Dict[str, object]) -> str | None:
+    output_text = payload.get("output_text")
+    if isinstance(output_text, str) and output_text.strip():
+        return output_text.strip()
+    output = payload.get("output")
+    if isinstance(output, list):
+        chunks: List[str] = []
+        for item in output:
+            if not isinstance(item, dict):
+                continue
+            if item.get("type") != "message":
+                continue
+            for part in item.get("content", []) or []:
+                if not isinstance(part, dict):
+                    continue
+                if part.get("type") == "output_text" and part.get("text"):
+                    chunks.append(str(part["text"]))
+        text = "".join(chunks).strip()
+        return text or None
+    return None
+
+
+def _coerce_list(value: object, limit: int = 3) -> List[str]:
+    if not isinstance(value, list):
+        return []
+    out: List[str] = []
+    for item in value:
+        if isinstance(item, str):
+            cleaned = item.strip()
+            if cleaned:
+                out.append(cleaned)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _call_openai_insights(question: str, context: Dict[str, object], metrics: Dict[str, object]):
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        return None, None, "missing_api_key"
+    model = os.getenv("OPENAI_MODEL", "gpt-5.2-2025-12-11")
+    system_text = (
+        "You are a running coach for a single athlete. "
+        "Respond in JSON with keys: answer (string), recommendations (array), follow_ups (array). "
+        "Be concise, avoid medical claims, and ask follow-ups if context is missing. "
+        "Return valid JSON only."
+    )
+    user_text = (
+        f"Question: {question}\n"
+        f"Context: {json.dumps(context, ensure_ascii=False)}\n"
+        f"Metrics: {json.dumps(metrics, ensure_ascii=False)}\n"
+    )
+    body = {
+        "model": model,
+        "input": [
+            {"role": "system", "content": system_text},
+            {"role": "user", "content": user_text},
+        ],
+        "text": {"format": {"type": "json_object"}},
+    }
+    req = request.Request(
+        "https://api.openai.com/v1/responses",
+        data=json.dumps(body).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+    )
+    try:
+        with request.urlopen(req, timeout=30) as resp:
+            payload = json.load(resp)
+    except error.HTTPError as exc:
+        return None, model, f"http_error:{exc.code}"
+    except error.URLError:
+        return None, model, "network_error"
+    except json.JSONDecodeError:
+        return None, model, "bad_json"
+
+    text = _extract_response_text(payload)
+    if not text:
+        return None, model, "empty_response"
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return None, model, "invalid_json"
+    if not isinstance(parsed, dict):
+        return None, model, "invalid_payload"
+    return parsed, model, None
+
+
 @router.post("/insights/evaluate", response_model=InsightsEvaluateResponse)
 def insights_evaluate(payload: InsightsEvaluateRequest, user=Depends(get_current_user)):
     if not db_exists():
@@ -440,6 +534,18 @@ def insights_evaluate(payload: InsightsEvaluateRequest, user=Depends(get_current
         )
         recent_context = (cur.fetchone() or [0])[0]
 
+    metrics_payload = {
+        "dist_7d_km": dist_7d_km,
+        "dist_28d_km": dist_28d_km,
+        "pace_trend": pace_trend,
+        "hr_trend": hr_trend,
+        "has_hr": has_hr,
+        "last_run_at": last_run_at.isoformat() if last_run_at else None,
+    }
+    provider = "deterministic"
+    model = None
+    llm_error = None
+
     if dist_28d_km is None or dist_28d_km == 0:
         recommendations.append("Start with an easy 20–30 min run or walk today.")
         recommendations.append("Aim for 2–3 short sessions this week to rebuild consistency.")
@@ -476,12 +582,58 @@ def insights_evaluate(payload: InsightsEvaluateRequest, user=Depends(get_current
         volume_clause += f", 28d: {dist_28d_km:.1f} km"
     answer = f"Trend summary: {pace_clause}, {hr_clause}. {volume_clause}. This is general guidance; listen to your body."
 
-    return {
+    llm_payload, model, llm_error = _call_openai_insights(
+        payload.question,
+        payload.context or {},
+        metrics_payload,
+    )
+    if llm_payload:
+        provider = "openai"
+        answer = str(llm_payload.get("answer") or answer).strip() or answer
+        recommendations = _coerce_list(llm_payload.get("recommendations"), limit=3) or recommendations
+        follow_ups = _coerce_list(llm_payload.get("follow_ups"), limit=3) or follow_ups
+    elif llm_error and llm_error != "missing_api_key":
+        logger.warning("insights_evaluate llm_error=%s model=%s", llm_error, model)
+
+    logger.info("insights_evaluate provider=%s model=%s", provider, model or "deterministic")
+
+    response_payload = {
         "status": "ok",
         "answer": answer,
         "recommendations": recommendations,
         "follow_ups": follow_ups,
     }
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO insight_sessions(user_id, session_date, prompt_json, response_json)
+            VALUES(?, ?, ?, ?)
+            """,
+            (
+                user["id"],
+                time.strftime("%Y-%m-%d"),
+                json.dumps(
+                    {
+                        "question": payload.question,
+                        "context": payload.context or {},
+                        "metrics": metrics_payload,
+                    }
+                ),
+                json.dumps(
+                    {
+                        "provider": provider,
+                        "model": model,
+                        "answer": answer,
+                        "recommendations": recommendations,
+                        "follow_ups": follow_ups,
+                    }
+                ),
+            ),
+        )
+        conn.commit()
+
+    return response_payload
 
 
 @router.get("/insights/series", response_model=InsightsSeriesResponse)
