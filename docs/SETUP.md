@@ -15,6 +15,10 @@ If this is your first run, create a user first:
 ```bash
 python3 scripts/create_user.py yourname yourpassword --assign-existing
 ```
+To reset a password locally (single-user admin flow):
+```bash
+python3 scripts/reset_password.py yourname
+```
 
 ## 2) Run the pipeline only
 ```bash

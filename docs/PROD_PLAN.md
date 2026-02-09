@@ -12,6 +12,7 @@ This is a parkable, staged plan to take the fitness-platform from local/dev to p
 ## Phase 1 — Security & identity
 - JWT hardening: expiry enforcement, refresh tokens, rotation, revocation
 - Password policy, lockout, rate limiting
+- Password reset flow (admin/local CLI for now; email-based later)
 - Secrets via vault/SSM Parameter Store (no `.env` in prod)
   - Assume **no Session Manager**. Use SSH + CI deploy to inject env from Parameter Store.
 

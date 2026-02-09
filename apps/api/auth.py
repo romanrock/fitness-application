@@ -4,8 +4,6 @@ import hmac
 import os
 from datetime import datetime, timedelta, timezone
 
-import jwt
-
 from packages.config import JWT_ALG, JWT_EXP_MINUTES, JWT_SECRET
 
 
@@ -27,6 +25,8 @@ def verify_password(password: str, stored: str) -> bool:
 
 
 def create_token(user_id: int, username: str) -> str:
+    import jwt
+
     now = datetime.now(timezone.utc)
     payload = {
         "sub": str(user_id),
@@ -38,4 +38,6 @@ def create_token(user_id: int, username: str) -> str:
 
 
 def decode_token(token: str) -> dict:
+    import jwt
+
     return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALG])
