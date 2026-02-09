@@ -27,6 +27,7 @@ This is a parkable, staged plan to take the fitness-platform from local/dev to p
   - Added DB integrity check script + foreign key enforcement on connections
   - Rollback guide documented in docs/ROLLBACK.md
   - Raw/stream ingestion now upserts to stay idempotent on replays
+  - Idempotent ingestion audit complete (Strava API/local ingest, weather, segments, pipeline)
 
 ## Phase 3 — Reliability & jobs
 - Worker supervision + retry/backoff + circuit breakers
