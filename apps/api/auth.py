@@ -2,12 +2,13 @@ import base64
 import hashlib
 import hmac
 import os
+from typing import Optional
 from datetime import datetime, timedelta, timezone
 
 from packages.config import JWT_ALG, JWT_EXP_MINUTES, JWT_SECRET
 
 
-def hash_password(password: str, salt: str | None = None) -> str:
+def hash_password(password: str, salt: Optional[str] = None) -> str:
     if salt is None:
         salt = base64.urlsafe_b64encode(os.urandom(16)).decode("utf-8")
     dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 200_000)
