@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from apps.api.auth import hash_password
+from apps.api.auth import hash_password, validate_password
 from packages.config import DB_PATH
 
 
@@ -32,6 +32,10 @@ def main() -> None:
         raise SystemExit("DB not initialized. Run scripts/init_db.py first.")
 
     password = args.password or prompt_password()
+    try:
+        validate_password(password, args.username)
+    except ValueError as exc:
+        raise SystemExit(str(exc))
     pw_hash = hash_password(password)
 
     with sqlite3.connect(DB_PATH) as conn:

@@ -50,5 +50,7 @@ Allow inbound:
   - `FITNESS_STRAVA_USER_ID` (optional; forces which user_id to attach new Strava data)
 
 ## Notes
-- Keep secrets in `.env` on EC2; do not commit to git.
+- For prod, prefer AWS SSM Parameter Store:
+  - `SSM_PATH=/fitness-platform/prod/ ./scripts/pull_ssm_env.sh /home/ec2-user/fitness-platform/.env`
+- If using `.env`, do not commit it to git.
 - Code/config changes should be committed and pulled on EC2.

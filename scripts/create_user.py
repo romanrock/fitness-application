@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from apps.api.auth import hash_password
+from apps.api.auth import hash_password, validate_password
 from packages.config import DB_PATH
 
 
@@ -33,6 +33,10 @@ def main():
             """
         )
         cur = conn.cursor()
+        try:
+            validate_password(args.password, args.username)
+        except ValueError as exc:
+            raise SystemExit(str(exc))
         pw_hash = hash_password(args.password)
         cur.execute("SELECT id FROM users WHERE username=?", (args.username,))
         row = cur.fetchone()

@@ -19,6 +19,7 @@ To reset a password locally (single-user admin flow):
 ```bash
 python3 scripts/reset_password.py yourname
 ```
+Password policy defaults: min 10 chars and at least 2 character classes (lower/upper/digit/symbol).
 
 ## 2) Run the pipeline only
 ```bash

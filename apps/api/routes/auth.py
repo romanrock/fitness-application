@@ -1,12 +1,19 @@
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from packages.config import REFRESH_ENABLED, REFRESH_TTL_DAYS
+from packages.config import (
+    AUTH_LOGIN_IP_LIMIT,
+    AUTH_LOGIN_USER_LIMIT,
+    AUTH_LOGIN_WINDOW_SEC,
+    REFRESH_ENABLED,
+    REFRESH_TTL_DAYS,
+)
 from ..auth import create_token, verify_password
-from ..rate_limit import check_rate_limit
-from ..schemas import LoginRequest, LoginResponse, RefreshRequest
+from ..deps import get_current_user
+from ..rate_limit import check_rate_limit, clear_rate_limit
+from ..schemas import LoginRequest, LoginResponse, LogoutRequest, LogoutResponse, RefreshRequest
 from ..utils import get_db
 
 
@@ -25,7 +32,9 @@ def login(payload: LoginRequest, request: Request):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing credentials")
 
     client_host = request.client.host if request.client else "unknown"
-    if not check_rate_limit(f"login:{client_host}", limit=5, window_sec=600):
+    if not check_rate_limit(f"login:user:{username}", limit=AUTH_LOGIN_USER_LIMIT, window_sec=AUTH_LOGIN_WINDOW_SEC):
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many attempts")
+    if not check_rate_limit(f"login:ip:{client_host}", limit=AUTH_LOGIN_IP_LIMIT, window_sec=AUTH_LOGIN_WINDOW_SEC):
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many attempts")
 
     with get_db() as conn:
@@ -34,6 +43,8 @@ def login(payload: LoginRequest, request: Request):
         row = cur.fetchone()
         if not row or not verify_password(password, row[1]):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+        clear_rate_limit(f"login:user:{username}")
+        clear_rate_limit(f"login:ip:{client_host}")
         token = create_token(row[0], username)
         refresh_token = None
         if REFRESH_ENABLED:
@@ -80,4 +91,33 @@ def refresh(payload: RefreshRequest):
         if not user_row:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
         access_token = create_token(user_id, user_row[0])
-    return {"access_token": access_token, "token_type": "bearer"}
+        new_refresh = _create_refresh_token()
+        new_expires = (now + timedelta(days=REFRESH_TTL_DAYS)).isoformat()
+        cur.execute("UPDATE refresh_tokens SET revoked=1 WHERE token=?", (token,))
+        cur.execute(
+            "INSERT INTO refresh_tokens(user_id, token, expires_at) VALUES(?,?,?)",
+            (user_id, new_refresh, new_expires),
+        )
+        conn.commit()
+    return {"access_token": access_token, "token_type": "bearer", "refresh_token": new_refresh}
+
+
+@router.post("/auth/logout", response_model=LogoutResponse)
+def logout(payload: LogoutRequest, current_user=Depends(get_current_user)):
+    if not REFRESH_ENABLED:
+        return {"status": "ok"}
+    with get_db() as conn:
+        cur = conn.cursor()
+        if payload.refresh_token:
+            cur.execute(
+                "SELECT user_id FROM refresh_tokens WHERE token=?",
+                (payload.refresh_token,),
+            )
+            row = cur.fetchone()
+            if row and row[0] != current_user["id"]:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid refresh token")
+            cur.execute("UPDATE refresh_tokens SET revoked=1 WHERE token=?", (payload.refresh_token,))
+        else:
+            cur.execute("UPDATE refresh_tokens SET revoked=1 WHERE user_id=?", (current_user["id"],))
+        conn.commit()
+    return {"status": "ok"}

@@ -5,7 +5,7 @@ import os
 from typing import Optional
 from datetime import datetime, timedelta, timezone
 
-from packages.config import JWT_ALG, JWT_EXP_MINUTES, JWT_SECRET
+from packages.config import JWT_ALG, JWT_EXP_MINUTES, JWT_SECRET, PW_MIN_LEN, PW_REQUIRE_CLASSES
 
 
 def hash_password(password: str, salt: Optional[str] = None) -> str:
@@ -23,6 +23,27 @@ def verify_password(password: str, stored: str) -> bool:
         return False
     calc = hash_password(password, salt)
     return hmac.compare_digest(calc, f"{salt}${digest}")
+
+
+def validate_password(password: str, username: Optional[str] = None) -> None:
+    errors = []
+    if len(password) < PW_MIN_LEN:
+        errors.append(f"Password must be at least {PW_MIN_LEN} characters.")
+    classes = 0
+    if any(c.islower() for c in password):
+        classes += 1
+    if any(c.isupper() for c in password):
+        classes += 1
+    if any(c.isdigit() for c in password):
+        classes += 1
+    if any(not c.isalnum() for c in password):
+        classes += 1
+    if classes < PW_REQUIRE_CLASSES:
+        errors.append("Password must include at least two character classes (lower/upper/digit/symbol).")
+    if username and username.lower() in password.lower():
+        errors.append("Password must not contain the username.")
+    if errors:
+        raise ValueError(" ".join(errors))
 
 
 def create_token(user_id: int, username: str) -> str:

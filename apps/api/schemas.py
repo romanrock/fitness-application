@@ -52,6 +52,14 @@ class RefreshRequest(BaseModel):
     refresh_token: str
 
 
+class LogoutRequest(BaseModel):
+    refresh_token: Optional[str] = None
+
+
+class LogoutResponse(BaseModel):
+    status: str
+
+
 class StatsResponse(DBMissingResponse):
     activities_raw: Optional[int] = None
     streams_raw: Optional[int] = None

@@ -31,6 +31,11 @@ JWT_SECRET = os.getenv("FITNESS_JWT_SECRET", "dev-secret")
 JWT_ALG = os.getenv("FITNESS_JWT_ALG", "HS256")
 JWT_EXP_MINUTES = int(os.getenv("FITNESS_JWT_EXP_MINUTES", "60"))
 AUTH_DISABLED = os.getenv("FITNESS_AUTH_DISABLED", "1" if RUN_MODE == "dev" else "0") == "1"
+AUTH_LOGIN_IP_LIMIT = int(os.getenv("FITNESS_AUTH_LOGIN_IP_LIMIT", "20"))
+AUTH_LOGIN_USER_LIMIT = int(os.getenv("FITNESS_AUTH_LOGIN_USER_LIMIT", "5"))
+AUTH_LOGIN_WINDOW_SEC = int(os.getenv("FITNESS_AUTH_LOGIN_WINDOW_SEC", "900"))
+PW_MIN_LEN = int(os.getenv("FITNESS_PW_MIN_LEN", "10"))
+PW_REQUIRE_CLASSES = int(os.getenv("FITNESS_PW_REQUIRE_CLASSES", "2"))
 CORS_ORIGINS = [
     origin.strip()
     for origin in os.getenv(

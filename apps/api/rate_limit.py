@@ -16,3 +16,7 @@ def check_rate_limit(key: str, limit: int, window_sec: int) -> bool:
     times.append(now)
     _attempts[key] = times
     return True
+
+
+def clear_rate_limit(key: str) -> None:
+    _attempts.pop(key, None)

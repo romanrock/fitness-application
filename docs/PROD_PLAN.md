@@ -9,13 +9,14 @@ This is a parkable, staged plan to take the fitness-platform from local/dev to p
 - Basic tests + Jenkins steps (`scripts/run_tests.py`, `Jenkinsfile`, `scripts/smoke_api.py`)
 - Docker artifacts validated (`scripts/verify_docker.sh`, `make docker-build`)
 
-## Phase 1 — Security & identity (in progress)
-- JWT hardening: expiry enforcement, refresh tokens, rotation, revocation
-- Password policy, lockout, rate limiting
-- Password reset flow (admin/local CLI for now; email-based later)
+## Phase 1 — Security & identity (complete)
+- JWT hardening: expiry enforcement, refresh token rotation + revocation
+- Password policy + lockout/rate limiting (configurable limits)
+- Password reset flow (admin/local CLI; email-based later)
 - Secrets via vault/SSM Parameter Store (no `.env` in prod)
   - Assume **no Session Manager**. Use SSH + CI deploy to inject env from Parameter Store.
-  - Added: `scripts/reset_password.py` for single-user admin reset
+  - Added: `scripts/pull_ssm_env.sh` to materialize env from SSM.
+  - Added: `scripts/reset_password.py` for single-user admin reset.
 
 ## Phase 2 — Data integrity & DB
 - Schema constraints, foreign keys, unique indexes
