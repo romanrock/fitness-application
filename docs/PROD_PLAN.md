@@ -78,7 +78,7 @@ This is a parkable, staged plan to take the fitness-platform from local/dev to p
 - API contract tests (frontend → backend)
 - Performance budgets + caching
 
-## Phase 6.5 — AI assistant groundwork (feature‑flagged, no LLM yet; in progress)
+## Phase 6.5 — AI assistant groundwork (feature‑flagged, no LLM yet; complete)
 - DB tables: `context_events`, `objective_profiles`, `insight_sessions`
 - Compaction stub: store raw events + rolling summaries
 - API contracts (schemas only):
