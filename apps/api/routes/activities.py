@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from typing import Any, Dict, List
 
@@ -23,6 +24,8 @@ from ..utils import build_date_filter, db_exists, decode_polyline, dict_rows, ge
 
 router_public = APIRouter()
 router_api = APIRouter()
+
+logger = logging.getLogger("fitness.api")
 
 CACHE_TTL_SECONDS = 45
 MAX_ACTIVITIES_LIMIT = 200
@@ -354,8 +357,14 @@ def activity_summary(activity_id: str, user=Depends(get_current_user)):
         summary_notes: List[str] = []
         if not (stream_status["has_time"] and stream_status["has_distance"]):
             summary_notes.append("missing_streams")
+            logger.warning(
+                "missing_streams activity_id=%s user_id=%s", activity_id, user["id"]
+            )
         if not stream_status["has_hr"]:
             summary_notes.append("missing_hr_streams")
+            logger.warning(
+                "missing_hr_streams activity_id=%s user_id=%s", activity_id, user["id"]
+            )
         cur.execute(
             """
             SELECT r.raw_json, c.distance_m, c.moving_s, a.elev_gain,
@@ -514,6 +523,13 @@ def activity_series(activity_id: str, downsample: int = 5, user=Depends(get_curr
         )
         alt_row = cur.fetchone()
         if not time_row or not dist_row:
+            logger.warning(
+                "missing_streams_series activity_id=%s user_id=%s has_time=%s has_distance=%s",
+                activity_id,
+                user["id"],
+                bool(time_row),
+                bool(dist_row),
+            )
             return {"series": {}}
 
         def load_data(row):
