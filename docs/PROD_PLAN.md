@@ -18,7 +18,7 @@ This is a parkable, staged plan to take the fitness-platform from local/dev to p
   - Added: `scripts/pull_ssm_env.sh` to materialize env from SSM.
   - Added: `scripts/reset_password.py` for single-user admin reset.
 
-## Phase 2 — Data integrity & DB
+## Phase 2 — Data integrity & DB (complete)
 - Schema constraints, foreign keys, unique indexes
 - Idempotent ingestion (safe replays)
 - Migration rollback plan
@@ -30,6 +30,7 @@ This is a parkable, staged plan to take the fitness-platform from local/dev to p
   - Idempotent ingestion audit complete (Strava API/local ingest, weather, segments, pipeline)
   - Postgres transition plan drafted: docs/POSTGRES_PLAN.md
   - Postgres implementation started: DB_URL support + Postgres schema/migrations added
+  - Local Postgres test setup added: docker-compose.postgres.yml + scripts/pg_local_setup.sh
 
 ## Phase 3 — Reliability & jobs
 - Worker supervision + retry/backoff + circuit breakers

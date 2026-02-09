@@ -27,8 +27,14 @@ Non‑goal: rewrite the app around a full ORM; keep SQL + migrations working.
 - Verify `/api/health` and a few API endpoints after cutover.
 
 ## Proposed local docker (for testing)
-- Add `docker-compose.postgres.yml` later with a `postgres` service.
+- Add `docker-compose.postgres.yml` with a `postgres` service.
 - Wire `FITNESS_DB_URL` via `.env` when testing.
+
+## Phase 2E — Local Postgres test (close-out)
+- `docker compose -f docker-compose.postgres.yml up -d`
+- `FITNESS_DB_URL=postgresql://...` set in `.env`
+- `python3 scripts/migrate_db.py`
+- Optional: run `python3 scripts/smoke_api.py`
 
 ## Acceptance criteria
 - Migrations run cleanly on Postgres.
