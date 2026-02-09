@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 import time
 import statistics
 from datetime import datetime, timezone, timedelta
@@ -423,6 +424,162 @@ def _coerce_list(value: object, limit: int = 3) -> List[str]:
     return out
 
 
+def _parse_range_days(question: str, context: Dict[str, object] | None) -> int | None:
+    if context:
+        for key, mult in (
+            ("range_days", 1),
+            ("range_weeks", 7),
+            ("range_months", 30),
+            ("range_years", 365),
+        ):
+            raw = context.get(key)
+            if isinstance(raw, (int, float)) and raw > 0:
+                return int(raw * mult)
+    q = question.lower()
+    patterns = [
+        (r"(?:last|past|previous|over the last)\s+(\d+)\s*days?", 1),
+        (r"(?:last|past|previous|over the last)\s+(\d+)\s*weeks?", 7),
+        (r"(?:last|past|previous|over the last)\s+(\d+)\s*months?", 30),
+        (r"(?:last|past|previous|over the last)\s+(\d+)\s*years?", 365),
+        (r"(?:last|past|previous|over the last)\s+year\b", 365),
+        (r"(?:last|past|previous|over the last)\s+month\b", 30),
+        (r"(?:last|past|previous|over the last)\s+week\b", 7),
+    ]
+    for pattern, mult in patterns:
+        match = re.search(pattern, q)
+        if not match:
+            continue
+        if match.lastindex:
+            return int(match.group(1)) * mult
+        return mult
+    return None
+
+
+def _summarize_window(conn, user_id: int, start_dt: datetime, end_dt: datetime):
+    start_iso = start_dt.isoformat()
+    end_iso = end_dt.isoformat()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT COUNT(*), SUM(c.distance_m), SUM(c.moving_s), AVG(c.avg_hr_norm), AVG(c.avg_hr_raw)
+        FROM activities a
+        JOIN activities_calc c ON c.activity_id = a.activity_id
+        WHERE a.user_id = ?
+          AND lower(a.activity_type) = 'run'
+          AND a.start_time >= ?
+          AND a.start_time <= ?
+        """,
+        (user_id, start_iso, end_iso),
+    )
+    row = cur.fetchone() or [0, 0, 0, None, None]
+    run_count = row[0] or 0
+    distance_m = row[1] or 0
+    moving_s = row[2] or 0
+    avg_hr = row[3] or row[4]
+    avg_pace_sec = None
+    if distance_m and moving_s:
+        avg_pace_sec = moving_s / (distance_m / 1000.0)
+
+    cur.execute(
+        """
+        SELECT MIN(time_s)
+        FROM segments_best
+        WHERE distance_m = 5000 AND date >= ? AND date <= ?
+        """,
+        (start_iso, end_iso),
+    )
+    best_5k = (cur.fetchone() or [None])[0]
+    cur.execute(
+        """
+        SELECT MIN(time_s)
+        FROM segments_best
+        WHERE distance_m = 10000 AND date >= ? AND date <= ?
+        """,
+        (start_iso, end_iso),
+    )
+    best_10k = (cur.fetchone() or [None])[0]
+
+    cur.execute(
+        """
+        SELECT COUNT(DISTINCT strftime('%Y-%W', start_time))
+        FROM activities
+        WHERE user_id = ?
+          AND lower(activity_type) = 'run'
+          AND start_time >= ?
+          AND start_time <= ?
+        """,
+        (user_id, start_iso, end_iso),
+    )
+    weeks_with_runs = (cur.fetchone() or [0])[0] or 0
+
+    cur.execute(
+        """
+        SELECT start_time
+        FROM activities
+        WHERE user_id = ?
+          AND lower(activity_type) = 'run'
+          AND start_time >= ?
+          AND start_time <= ?
+        ORDER BY start_time
+        """,
+        (user_id, start_iso, end_iso),
+    )
+    times = [_parse_dt(r[0]) for r in cur.fetchall()]
+    times = [t for t in times if t is not None]
+    longest_gap_days = None
+    if len(times) >= 2:
+        gaps = []
+        for prev, cur_time in zip(times, times[1:]):
+            gap = (cur_time - prev).days
+            gaps.append(gap)
+        longest_gap_days = max(gaps) if gaps else None
+
+    cur.execute(
+        """
+        SELECT week, avg_pace_sec
+        FROM metrics_weekly
+        WHERE user_id = ?
+          AND week >= ?
+        ORDER BY week
+        """,
+        (user_id, week_key(start_dt)),
+    )
+    weekly_pace_series = [r[1] for r in cur.fetchall() if r[1] is not None]
+    pace_trend = linear_slope(weekly_pace_series) if weekly_pace_series else None
+
+    cur.execute(
+        """
+        SELECT strftime('%Y', start_time) as yr, SUM(c.distance_m)
+        FROM activities a
+        JOIN activities_calc c ON c.activity_id = a.activity_id
+        WHERE a.user_id = ?
+          AND lower(a.activity_type) = 'run'
+          AND a.start_time >= ?
+          AND a.start_time <= ?
+        GROUP BY yr
+        ORDER BY yr
+        """,
+        (user_id, start_iso, end_iso),
+    )
+    yearly = {r[0]: (r[1] or 0) / 1000.0 for r in cur.fetchall() if r[0]}
+
+    return {
+        "start": start_iso,
+        "end": end_iso,
+        "runs": run_count,
+        "distance_km": round(distance_m / 1000.0, 1) if distance_m else 0.0,
+        "moving_hours": round(moving_s / 3600.0, 2) if moving_s else 0.0,
+        "avg_pace_sec": round(avg_pace_sec, 2) if avg_pace_sec else None,
+        "avg_hr": round(avg_hr, 1) if avg_hr else None,
+        "best_5k_time_s": best_5k,
+        "best_10k_time_s": best_10k,
+        "weeks_with_runs": weeks_with_runs,
+        "longest_gap_days": longest_gap_days,
+        "pace_trend": pace_trend,
+        "yearly_distance_km": yearly,
+    }
+
+
 def _call_openai_insights(question: str, context: Dict[str, object], metrics: Dict[str, object]):
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
@@ -534,6 +691,24 @@ def insights_evaluate(payload: InsightsEvaluateRequest, user=Depends(get_current
         )
         recent_context = (cur.fetchone() or [0])[0]
 
+        requested_days = _parse_range_days(payload.question, payload.context)
+        window_summaries: Dict[str, object] = {}
+        now_dt = datetime.now(timezone.utc)
+        windows = [
+            ("3m", 90),
+            ("6m", 180),
+            ("12m", 365),
+            ("3y", 365 * 3),
+        ]
+        for label, days in windows:
+            start_dt = now_dt - timedelta(days=days)
+            window_summaries[label] = _summarize_window(conn, user["id"], start_dt, now_dt)
+        if requested_days:
+            start_dt = now_dt - timedelta(days=requested_days)
+            window_summaries["requested"] = _summarize_window(
+                conn, user["id"], start_dt, now_dt
+            )
+
     metrics_payload = {
         "dist_7d_km": dist_7d_km,
         "dist_28d_km": dist_28d_km,
@@ -541,6 +716,7 @@ def insights_evaluate(payload: InsightsEvaluateRequest, user=Depends(get_current
         "hr_trend": hr_trend,
         "has_hr": has_hr,
         "last_run_at": last_run_at.isoformat() if last_run_at else None,
+        "window_summaries": window_summaries,
     }
     provider = "deterministic"
     model = None
