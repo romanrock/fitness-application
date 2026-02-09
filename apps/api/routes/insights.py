@@ -365,7 +365,6 @@ def insights_context(payload: InsightsContextRequest, user=Depends(get_current_u
     return {"status": "stored", "stored_at": occurred_at}
 
 
-@router.post("/insights/evaluate", response_model=InsightsEvaluateResponse)
 def _parse_dt(value: str | None) -> datetime | None:
     if not value:
         return None
@@ -384,6 +383,7 @@ def _trend_label(value: float | None, better_lower: bool, threshold: float = 0.5
     return "improving" if improving else "declining"
 
 
+@router.post("/insights/evaluate", response_model=InsightsEvaluateResponse)
 def insights_evaluate(payload: InsightsEvaluateRequest, user=Depends(get_current_user)):
     if not db_exists():
         return {"db": "missing"}
