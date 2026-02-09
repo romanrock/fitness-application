@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import re
+import uuid
 import time
 import statistics
 from datetime import datetime, timezone, timedelta
@@ -424,6 +425,165 @@ def _coerce_list(value: object, limit: int = 3) -> List[str]:
     return out
 
 
+def _format_turns(turns: List[Dict[str, str]]) -> str:
+    lines: List[str] = []
+    for turn in turns:
+        question = turn.get("question")
+        answer = turn.get("answer")
+        if question:
+            lines.append(f"User: {question}")
+        if answer:
+            lines.append(f"Assistant: {answer}")
+    return "\n".join(lines).strip()
+
+
+def _load_memory(conn, user_id: int):
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT summary_json, last_session_id
+        FROM assistant_memory
+        WHERE user_id = ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (user_id,),
+    )
+    row = cur.fetchone()
+    if not row:
+        return None, 0
+    summary_json = row[0] or "{}"
+    last_session_id = row[1] or 0
+    try:
+        summary = json.loads(summary_json)
+    except json.JSONDecodeError:
+        summary = {"summary": summary_json}
+    return summary, last_session_id
+
+
+def _save_memory(conn, user_id: int, summary: Dict[str, object], last_session_id: int):
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM assistant_memory WHERE user_id = ? LIMIT 1", (user_id,))
+    row = cur.fetchone()
+    payload = json.dumps(summary)
+    if row:
+        cur.execute(
+            """
+            UPDATE assistant_memory
+            SET summary_json = ?, updated_at = CURRENT_TIMESTAMP, last_session_id = ?
+            WHERE user_id = ?
+            """,
+            (payload, last_session_id, user_id),
+        )
+    else:
+        cur.execute(
+            """
+            INSERT INTO assistant_memory(user_id, summary_json, last_session_id)
+            VALUES(?, ?, ?)
+            """,
+            (user_id, payload, last_session_id),
+        )
+
+
+def _call_openai_memory_summary(existing_summary: str | None, turns_text: str):
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        return None, None, "missing_api_key"
+    model = os.getenv("OPENAI_MODEL", "gpt-5.2-2025-12-11")
+    system_text = (
+        "You are summarizing a long-term memory for a running coach. "
+        "Return JSON with keys: summary (string), goals (array), preferences (array), "
+        "injuries (array), notes (array). Keep it concise."
+    )
+    user_text = "Existing summary:\n"
+    user_text += (existing_summary or "None") + "\n\n"
+    user_text += "New turns:\n" + turns_text
+    body = {
+        "model": model,
+        "input": [
+            {"role": "system", "content": system_text},
+            {"role": "user", "content": user_text},
+        ],
+        "text": {"format": {"type": "json_object"}},
+    }
+    req = request.Request(
+        "https://api.openai.com/v1/responses",
+        data=json.dumps(body).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+    )
+    try:
+        with request.urlopen(req, timeout=30) as resp:
+            payload = json.load(resp)
+    except error.HTTPError as exc:
+        return None, model, f"http_error:{exc.code}"
+    except error.URLError:
+        return None, model, "network_error"
+    except json.JSONDecodeError:
+        return None, model, "bad_json"
+
+    text = _extract_response_text(payload)
+    if not text:
+        return None, model, "empty_response"
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return None, model, "invalid_json"
+    if not isinstance(parsed, dict):
+        return None, model, "invalid_payload"
+    return parsed, model, None
+
+
+def _maybe_compact_memory(conn, user_id: int):
+    try:
+        summary, last_id = _load_memory(conn, user_id)
+    except Exception:
+        return
+    last_id = last_id or 0
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, prompt_json, response_json
+        FROM insight_sessions
+        WHERE user_id = ? AND id > ?
+        ORDER BY id ASC
+        """,
+        (user_id, last_id),
+    )
+    rows = cur.fetchall()
+    if len(rows) < 6:
+        return
+    turns: List[Dict[str, str]] = []
+    for row in rows[-12:]:
+        prompt_json = row[1] or "{}"
+        response_json = row[2] or "{}"
+        try:
+            prompt = json.loads(prompt_json)
+        except json.JSONDecodeError:
+            prompt = {}
+        try:
+            response = json.loads(response_json)
+        except json.JSONDecodeError:
+            response = {}
+        question = prompt.get("question")
+        answer = response.get("answer")
+        if question or answer:
+            turns.append({"question": str(question or ""), "answer": str(answer or "")})
+    turns_text = _format_turns(turns)
+    existing_summary = None
+    if isinstance(summary, dict):
+        existing_summary = summary.get("summary")
+    summary_payload, model, err = _call_openai_memory_summary(existing_summary, turns_text)
+    if summary_payload:
+        summary_payload["model"] = model
+        summary_payload["updated_at"] = datetime.now(timezone.utc).isoformat()
+        _save_memory(conn, user_id, summary_payload, rows[-1][0])
+    elif err and err != "missing_api_key":
+        logger.warning("assistant_memory compact_error=%s model=%s", err, model)
+
+
 def _parse_range_days(question: str, context: Dict[str, object] | None) -> int | None:
     if context:
         for key, mult in (
@@ -580,7 +740,13 @@ def _summarize_window(conn, user_id: int, start_dt: datetime, end_dt: datetime):
     }
 
 
-def _call_openai_insights(question: str, context: Dict[str, object], metrics: Dict[str, object]):
+def _call_openai_insights(
+    question: str,
+    context: Dict[str, object],
+    metrics: Dict[str, object],
+    history_text: str | None,
+    memory_summary: str | None,
+):
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         return None, None, "missing_api_key"
@@ -591,11 +757,13 @@ def _call_openai_insights(question: str, context: Dict[str, object], metrics: Di
         "Be concise, avoid medical claims, and ask follow-ups if context is missing. "
         "Return valid JSON only."
     )
-    user_text = (
-        f"Question: {question}\n"
-        f"Context: {json.dumps(context, ensure_ascii=False)}\n"
-        f"Metrics: {json.dumps(metrics, ensure_ascii=False)}\n"
-    )
+    user_text = f"Question: {question}\n"
+    user_text += f"Context: {json.dumps(context, ensure_ascii=False)}\n"
+    user_text += f"Metrics: {json.dumps(metrics, ensure_ascii=False)}\n"
+    if memory_summary:
+        user_text += f"Memory summary: {memory_summary}\n"
+    if history_text:
+        user_text += f"Recent conversation:\n{history_text}\n"
     body = {
         "model": model,
         "input": [
@@ -638,6 +806,7 @@ def _call_openai_insights(question: str, context: Dict[str, object], metrics: Di
 def insights_evaluate(payload: InsightsEvaluateRequest, user=Depends(get_current_user)):
     if not db_exists():
         return {"db": "missing"}
+    session_id = payload.session_id or str(uuid.uuid4())
     recommendations: List[str] = []
     follow_ups: List[str] = []
     dist_7d_km = None
@@ -646,6 +815,8 @@ def insights_evaluate(payload: InsightsEvaluateRequest, user=Depends(get_current
     hr_trend = None
     last_run_at = None
     has_hr = False
+    history_text = None
+    memory_summary = None
 
     with get_db() as conn:
         cur = conn.cursor()
@@ -690,6 +861,43 @@ def insights_evaluate(payload: InsightsEvaluateRequest, user=Depends(get_current
             (user["id"], (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()),
         )
         recent_context = (cur.fetchone() or [0])[0]
+
+        try:
+            memory_payload, _ = _load_memory(conn, user["id"])
+            if isinstance(memory_payload, dict):
+                memory_summary = memory_payload.get("summary")
+        except Exception:
+            memory_summary = None
+
+        try:
+            cur.execute(
+                """
+                SELECT prompt_json, response_json
+                FROM insight_sessions
+                WHERE user_id = ? AND session_id = ?
+                ORDER BY id DESC
+                LIMIT 6
+                """,
+                (user["id"], session_id),
+            )
+            rows = list(reversed(cur.fetchall()))
+            turns: List[Dict[str, str]] = []
+            for prompt_json, response_json in rows:
+                try:
+                    prompt = json.loads(prompt_json or "{}")
+                except json.JSONDecodeError:
+                    prompt = {}
+                try:
+                    response = json.loads(response_json or "{}")
+                except json.JSONDecodeError:
+                    response = {}
+                question = prompt.get("question")
+                answer = response.get("answer")
+                if question or answer:
+                    turns.append({"question": str(question or ""), "answer": str(answer or "")})
+            history_text = _format_turns(turns) if turns else None
+        except Exception:
+            history_text = None
 
         requested_days = _parse_range_days(payload.question, payload.context)
         window_summaries: Dict[str, object] = {}
@@ -762,6 +970,8 @@ def insights_evaluate(payload: InsightsEvaluateRequest, user=Depends(get_current
         payload.question,
         payload.context or {},
         metrics_payload,
+        history_text,
+        memory_summary,
     )
     if llm_payload:
         provider = "openai"
@@ -778,19 +988,22 @@ def insights_evaluate(payload: InsightsEvaluateRequest, user=Depends(get_current
         "answer": answer,
         "recommendations": recommendations,
         "follow_ups": follow_ups,
+        "session_id": session_id,
     }
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(
             """
-            INSERT INTO insight_sessions(user_id, session_date, prompt_json, response_json)
-            VALUES(?, ?, ?, ?)
+            INSERT INTO insight_sessions(user_id, session_date, session_id, prompt_json, response_json)
+            VALUES(?, ?, ?, ?, ?)
             """,
             (
                 user["id"],
                 time.strftime("%Y-%m-%d"),
+                session_id,
                 json.dumps(
                     {
+                        "session_id": session_id,
                         "question": payload.question,
                         "context": payload.context or {},
                         "metrics": metrics_payload,
@@ -807,6 +1020,7 @@ def insights_evaluate(payload: InsightsEvaluateRequest, user=Depends(get_current
                 ),
             ),
         )
+        _maybe_compact_memory(conn, user["id"])
         conn.commit()
 
     return response_payload

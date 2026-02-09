@@ -183,10 +183,19 @@ CREATE TABLE IF NOT EXISTS insight_sessions (
   id BIGSERIAL PRIMARY KEY,
   user_id BIGINT NOT NULL,
   session_date DATE NOT NULL,
+  session_id TEXT,
   prompt_json TEXT,
   response_json TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS assistant_memory (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id),
+  summary_json TEXT NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  last_session_id BIGINT DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS pipeline_runs (
@@ -263,6 +272,8 @@ CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user ON refresh_tokens(user_id);
 CREATE INDEX IF NOT EXISTS idx_context_events_user_time ON context_events(user_id, occurred_at);
 CREATE INDEX IF NOT EXISTS idx_objective_profiles_user ON objective_profiles(user_id);
 CREATE INDEX IF NOT EXISTS idx_insight_sessions_user_date ON insight_sessions(user_id, session_date);
+CREATE INDEX IF NOT EXISTS idx_insight_sessions_session ON insight_sessions(user_id, session_id, id);
+CREATE INDEX IF NOT EXISTS idx_assistant_memory_user ON assistant_memory(user_id);
 CREATE INDEX IF NOT EXISTS idx_segments_best_scope_distance ON segments_best(scope, distance_m);
 CREATE INDEX IF NOT EXISTS idx_segments_best_scope_activity ON segments_best(scope, activity_id);
 CREATE INDEX IF NOT EXISTS idx_source_sync_state_user ON source_sync_state(user_id);

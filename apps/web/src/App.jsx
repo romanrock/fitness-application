@@ -11,6 +11,7 @@ import Login from './screens/Login.jsx';
 const API_BASE = '/api/v1';
 const OVERVIEW_CACHE_KEY = 'fitness_overview_cache';
 const OVERVIEW_CACHE_TTL_MS = 5 * 60 * 1000;
+const ASSISTANT_SESSION_KEY = 'assistant_session_id';
 const ASSISTANT_PROMPTS = [
   'What should I do today?',
   'How am I trending?',
@@ -89,6 +90,11 @@ export default function App() {
   const [assistantError, setAssistantError] = useState(null);
   const [assistantFeedback, setAssistantFeedback] = useState(null);
   const [assistantAutoRequested, setAssistantAutoRequested] = useState(false);
+  const [assistantSessionId, setAssistantSessionId] = useState(() => {
+    if (typeof window === 'undefined') return null;
+    return window.localStorage.getItem(ASSISTANT_SESSION_KEY);
+  });
+  const [assistantMessages, setAssistantMessages] = useState([]);
   const [contextForm, setContextForm] = useState({ mood: '', sleep: '', soreness: '', notes: '' });
   const [contextStatus, setContextStatus] = useState(null);
 
@@ -168,12 +174,17 @@ export default function App() {
     return res.json();
   }, [apiFetch]);
 
-  const handleAskAssistant = useCallback(async () => {
-    if (!assistantQuestion.trim()) return;
+  const handleAskAssistant = useCallback(async (questionOverride = null) => {
+    const question = (questionOverride ?? assistantQuestion).trim();
+    if (!question) return;
     setAssistantLoading(true);
     setAssistantError(null);
     setAssistantResponse(null);
     setAssistantFeedback(null);
+    setAssistantMessages((prev) => [
+      ...prev,
+      { role: 'user', text: question, id: Date.now() }
+    ]);
     try {
       const context = {
         mood: contextForm.mood || null,
@@ -183,16 +194,56 @@ export default function App() {
       const res = await apiFetch('/insights/evaluate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: assistantQuestion, context })
+        body: JSON.stringify({
+          question,
+          context,
+          session_id: assistantSessionId || null
+        })
       });
       const json = await res.json();
       setAssistantResponse(json);
+      if (json?.session_id) {
+        setAssistantSessionId(json.session_id);
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem(ASSISTANT_SESSION_KEY, json.session_id);
+        }
+      }
+      if (json?.answer) {
+        setAssistantMessages((prev) => [
+          ...prev,
+          {
+            role: 'assistant',
+            text: json.answer,
+            recommendations: json.recommendations || [],
+            followUps: json.follow_ups || [],
+            id: Date.now() + 1
+          }
+        ]);
+      }
     } catch {
       setAssistantError('Unable to reach the assistant right now.');
     } finally {
       setAssistantLoading(false);
     }
-  }, [assistantQuestion, contextForm, apiFetch]);
+  }, [assistantQuestion, contextForm, apiFetch, assistantSessionId]);
+
+  const handleFollowUp = useCallback((question) => {
+    setAssistantQuestion(question);
+    handleAskAssistant(question);
+  }, [handleAskAssistant]);
+
+  const resetAssistantSession = useCallback(() => {
+    setAssistantSessionId(null);
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem(ASSISTANT_SESSION_KEY);
+    }
+    setAssistantMessages([]);
+    setAssistantResponse(null);
+    setAssistantFeedback(null);
+    setAssistantError(null);
+    setAssistantAutoRequested(false);
+    setAssistantQuestion(ASSISTANT_PROMPTS[0]);
+  }, []);
 
   useEffect(() => {
     if (!assistantOpen) {
@@ -200,6 +251,7 @@ export default function App() {
       return;
     }
     if (assistantAutoRequested || assistantLoading || assistantResponse) return;
+    if (assistantMessages.length > 0) return;
     if (!assistantQuestion.trim()) return;
     setAssistantAutoRequested(true);
     handleAskAssistant();
@@ -208,6 +260,7 @@ export default function App() {
     assistantAutoRequested,
     assistantLoading,
     assistantResponse,
+    assistantMessages.length,
     assistantQuestion,
     handleAskAssistant
   ]);
@@ -686,7 +739,10 @@ export default function App() {
               <h2>Assistant</h2>
               <div className="muted">Daily guidance + trend summary</div>
             </div>
-            <button className="icon-btn" type="button" onClick={() => setAssistantOpen(false)}>Close</button>
+            <div className="assistant-header-actions">
+              <button className="assistant-chip" type="button" onClick={resetAssistantSession}>New chat</button>
+              <button className="icon-btn" type="button" onClick={() => setAssistantOpen(false)}>Close</button>
+            </div>
           </div>
 
           <div className="assistant-section">
@@ -719,31 +775,43 @@ export default function App() {
 
           <div className="assistant-section">
             <div className="assistant-label">Response</div>
-            <div className="assistant-response card">
-              {assistantResponse?.answer ? (
-                <>
-                  <p>{assistantResponse.answer}</p>
-                  {assistantResponse.recommendations?.length > 0 && (
-                    <>
-                      <div className="assistant-subtitle">Recommendations</div>
-                      <ul>
-                        {assistantResponse.recommendations.map((rec, idx) => (
-                          <li key={idx}>{rec}</li>
-                        ))}
-                      </ul>
-                    </>
-                  )}
-                  {assistantResponse.follow_ups?.length > 0 && (
-                    <>
-                      <div className="assistant-subtitle">Follow‑ups</div>
-                      <ul>
-                        {assistantResponse.follow_ups.map((q, idx) => (
-                          <li key={idx}>{q}</li>
-                        ))}
-                      </ul>
-                    </>
-                  )}
-                </>
+            <div className="assistant-thread card">
+              {assistantMessages.length > 0 ? (
+                assistantMessages.map((msg) => (
+                  <div key={msg.id} className={`assistant-message ${msg.role}`}>
+                    <div className="assistant-message-label">
+                      {msg.role === 'user' ? 'You' : 'Assistant'}
+                    </div>
+                    <p>{msg.text}</p>
+                    {msg.role === 'assistant' && msg.recommendations?.length > 0 && (
+                      <>
+                        <div className="assistant-subtitle">Recommendations</div>
+                        <ul>
+                          {msg.recommendations.map((rec, idx) => (
+                            <li key={idx}>{rec}</li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
+                    {msg.role === 'assistant' && msg.followUps?.length > 0 && (
+                      <>
+                        <div className="assistant-subtitle">Follow‑ups</div>
+                        <div className="assistant-row">
+                          {msg.followUps.map((q, idx) => (
+                            <button
+                              key={idx}
+                              className="assistant-chip"
+                              type="button"
+                              onClick={() => handleFollowUp(q)}
+                            >
+                              {q}
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ))
               ) : (
                 <div className="muted">Ask a question to see guidance.</div>
               )}

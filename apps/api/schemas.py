@@ -277,6 +277,7 @@ class InsightsContextResponse(DBMissingResponse):
 class InsightsEvaluateRequest(BaseModel):
     question: str
     context: Optional[Dict[str, Any]] = None
+    session_id: Optional[str] = None
 
 
 class InsightsEvaluateResponse(DBMissingResponse):
@@ -284,6 +285,7 @@ class InsightsEvaluateResponse(DBMissingResponse):
     answer: Optional[str] = None
     recommendations: List[str] = Field(default_factory=list)
     follow_ups: List[str] = Field(default_factory=list)
+    session_id: Optional[str] = None
 
 
 class SegmentBestEntry(BaseModel):
