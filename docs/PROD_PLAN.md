@@ -46,6 +46,7 @@ This is a parkable, staged plan to take the fitness-platform from local/dev to p
     - Fallback to low‑frequency poll (safety net)
   - Note: `run_all.js` remains **local‑only** for backfills; prod uses API polling/webhooks
   - Added job visibility endpoints: `GET /api/jobs`, `GET /api/job_runs`
+  - Added stale run cleanup + jittered backoff in worker
 
 ## Phase 4 — Observability
 - Structured logs, correlation IDs

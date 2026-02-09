@@ -6,6 +6,7 @@ from typing import Optional
 
 from packages import db
 
+
 @dataclass
 class JobState:
     job_name: str
@@ -216,3 +217,34 @@ def record_dead_letter(
         (job_name, _now_iso(), error, attempts, last_status),
     )
     conn.commit()
+
+
+def mark_stale_runs(conn, job_name: str, max_age_sec: int) -> int:
+    ensure_job_tables(conn)
+    rows = conn.execute(
+        """
+        SELECT id, started_at
+        FROM job_runs
+        WHERE job_name=? AND status='running'
+        """,
+        (job_name,),
+    ).fetchall()
+    if not rows:
+        return 0
+    now = datetime.now(timezone.utc)
+    stale_ids = []
+    for run_id, started_at in rows:
+        try:
+            if isinstance(started_at, datetime):
+                started_dt = started_at
+            else:
+                started_dt = datetime.fromisoformat(str(started_at).replace("Z", "+00:00"))
+        except Exception:
+            started_dt = now
+        if (now - started_dt).total_seconds() > max_age_sec:
+            stale_ids.append(run_id)
+    if not stale_ids:
+        return 0
+    for run_id in stale_ids:
+        finish_job_run(conn, run_id, "error", 0, "stale_run", 0.0)
+    return len(stale_ids)

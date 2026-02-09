@@ -1,6 +1,7 @@
 import subprocess
 from pathlib import Path
 import sys
+import random
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -24,6 +25,7 @@ from packages.config import (
 from packages.pipeline_lock import pipeline_lock
 from packages.job_state import (
     load_job_state,
+    mark_stale_runs,
     update_job_state,
     start_job_run,
     finish_job_run,
@@ -78,7 +80,8 @@ def run_pipeline_once():
 
 def _backoff_seconds(attempt: int) -> float:
     base = PIPELINE_BACKOFF_BASE_SEC * (2 ** max(attempt - 1, 0))
-    return min(base, PIPELINE_BACKOFF_MAX_SEC)
+    jitter = random.uniform(0.8, 1.2)
+    return min(base * jitter, PIPELINE_BACKOFF_MAX_SEC)
 
 
 def _run_with_retries() -> tuple[bool, str | None, int]:
@@ -155,6 +158,7 @@ def schedule_pipeline(stop_event: threading.Event):
         if db.db_exists():
             with db.connect() as conn:
                 db.configure_connection(conn)
+                mark_stale_runs(conn, "pipeline", REFRESH_SECONDS * 2)
                 run_id = start_job_run(conn, "pipeline")
         try:
             success, error, attempts = _run_with_retries()
