@@ -549,7 +549,7 @@ def _summarize_window(conn, user_id: int, start_dt: datetime, end_dt: datetime):
 
     cur.execute(
         """
-        SELECT strftime('%Y', start_time) as yr, SUM(c.distance_m)
+        SELECT strftime('%Y', a.start_time) as yr, SUM(c.distance_m)
         FROM activities a
         JOIN activities_calc c ON c.activity_id = a.activity_id
         WHERE a.user_id = ?
