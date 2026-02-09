@@ -28,6 +28,7 @@ This is a parkable, staged plan to take the fitness-platform from local/dev to p
   - Rollback guide documented in docs/ROLLBACK.md
   - Raw/stream ingestion now upserts to stay idempotent on replays
   - Idempotent ingestion audit complete (Strava API/local ingest, weather, segments, pipeline)
+  - Postgres transition plan drafted: docs/POSTGRES_PLAN.md
 
 ## Phase 3 — Reliability & jobs
 - Worker supervision + retry/backoff + circuit breakers
