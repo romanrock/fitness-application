@@ -13,3 +13,9 @@ data/fitness.db-shm
 data/fitness.db-wal
 exports/
 .pytest_cache/
+data/*.db-shm
+data/*.db-wal
+data/*.db-journal
+data/*.db-shm-wal
+data/*.db-shm*
+data/*.db-wal*

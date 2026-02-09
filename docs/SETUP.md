@@ -47,6 +47,7 @@ handles ingestion + processing on a schedule.
 - `/api/health` now includes the last pipeline run status.
 - Pipeline runs record duration and errors in `pipeline_runs`.
 - Auth: JWT is enabled; in dev you can set `FITNESS_AUTH_DISABLED=1` to bypass.
+- Repo hygiene: keep `.env`, `data/*.db*`, `exports/`, `.venv/`, and `.pytest_cache/` out of git.
 
 Note: API runs on `http://127.0.0.1:8000`, web runs on `http://127.0.0.1:8788`.
 
