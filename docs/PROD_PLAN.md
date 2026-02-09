@@ -12,7 +12,8 @@ This is a parkable, staged plan to take the fitness-platform from local/dev to p
 ## Phase 1 — Security & identity
 - JWT hardening: expiry enforcement, refresh tokens, rotation, revocation
 - Password policy, lockout, rate limiting
-- Secrets via vault/SSM (no `.env` in prod)
+- Secrets via vault/SSM Parameter Store (no `.env` in prod)
+  - Assume **no Session Manager**. Use SSH + CI deploy to inject env from Parameter Store.
 
 ## Phase 2 — Data integrity & DB
 - Schema constraints, foreign keys, unique indexes
@@ -92,4 +93,4 @@ This is a parkable, staged plan to take the fitness-platform from local/dev to p
 ### AWS Free Tier deployment (target)
 - EC2 t3.micro running Docker Compose (API + worker + web + caddy)
 - RDS Postgres (free tier) for primary DB
-- GitHub Actions deploys via AWS OIDC + SSM run-command
+- GitHub Actions deploys via AWS OIDC + **SSH** (no Session Manager)
