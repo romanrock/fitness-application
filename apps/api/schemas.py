@@ -283,6 +283,10 @@ class InsightsEvaluateRequest(BaseModel):
 class InsightsEvaluateResponse(DBMissingResponse):
     status: str
     answer: Optional[str] = None
+    today_recommendation: Optional[str] = None
+    trend_insight: Optional[str] = None
+    predicted_5k_time_s: Optional[float] = None
+    predicted_10k_time_s: Optional[float] = None
     recommendations: List[str] = Field(default_factory=list)
     follow_ups: List[str] = Field(default_factory=list)
     session_id: Optional[str] = None

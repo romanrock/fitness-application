@@ -95,6 +95,18 @@ export default function App() {
     return window.localStorage.getItem(ASSISTANT_SESSION_KEY);
   });
   const [assistantMessages, setAssistantMessages] = useState([]);
+
+  const formatDuration = useCallback((value) => {
+    if (value === null || value === undefined) return '—';
+    const total = Number(value);
+    if (Number.isNaN(total) || total <= 0) return '—';
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const seconds = Math.round(total % 60);
+    const mm = String(minutes).padStart(hours ? 2 : 1, '0');
+    const ss = String(seconds).padStart(2, '0');
+    return hours ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`;
+  }, []);
   const [contextForm, setContextForm] = useState({ mood: '', sleep: '', soreness: '', notes: '' });
   const [contextStatus, setContextStatus] = useState(null);
 
@@ -216,6 +228,10 @@ export default function App() {
             text: json.answer,
             recommendations: json.recommendations || [],
             followUps: json.follow_ups || [],
+            todayRecommendation: json.today_recommendation || null,
+            trendInsight: json.trend_insight || null,
+            predicted5k: json.predicted_5k_time_s ?? null,
+            predicted10k: json.predicted_10k_time_s ?? null,
             id: Date.now() + 1
           }
         ]);
@@ -742,6 +758,27 @@ export default function App() {
             <div className="assistant-header-actions">
               <button className="assistant-chip" type="button" onClick={resetAssistantSession}>New chat</button>
               <button className="icon-btn" type="button" onClick={() => setAssistantOpen(false)}>Close</button>
+            </div>
+          </div>
+
+          <div className="assistant-section">
+            <div className="assistant-label">Today + Trends</div>
+            <div className="assistant-summary-grid">
+              <div className="assistant-summary-card">
+                <div className="assistant-subtitle">Today recommended run</div>
+                <p>{assistantResponse?.today_recommendation || assistantMessages.at(-1)?.todayRecommendation || '—'}</p>
+              </div>
+              <div className="assistant-summary-card">
+                <div className="assistant-subtitle">Trend insight</div>
+                <p>{assistantResponse?.trend_insight || assistantMessages.at(-1)?.trendInsight || '—'}</p>
+              </div>
+              <div className="assistant-summary-card">
+                <div className="assistant-subtitle">Predicted 5k / 10k</div>
+                <p>
+                  5k {formatDuration(assistantResponse?.predicted_5k_time_s ?? assistantMessages.at(-1)?.predicted5k)} ·
+                  10k {formatDuration(assistantResponse?.predicted_10k_time_s ?? assistantMessages.at(-1)?.predicted10k)}
+                </p>
+              </div>
             </div>
           </div>
 

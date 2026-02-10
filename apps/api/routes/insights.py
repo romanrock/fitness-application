@@ -425,6 +425,33 @@ def _coerce_list(value: object, limit: int = 3) -> List[str]:
     return out
 
 
+def _coerce_time_seconds(value: object) -> float | None:
+    if isinstance(value, (int, float)):
+        return float(value)
+    if not isinstance(value, str):
+        return None
+    raw = value.strip()
+    if not raw:
+        return None
+    if raw.replace(".", "", 1).isdigit():
+        try:
+            return float(raw)
+        except ValueError:
+            return None
+    parts = raw.split(":")
+    if len(parts) in (2, 3):
+        try:
+            parts = [float(p) for p in parts]
+        except ValueError:
+            return None
+        if len(parts) == 2:
+            minutes, seconds = parts
+            return minutes * 60 + seconds
+        hours, minutes, seconds = parts
+        return hours * 3600 + minutes * 60 + seconds
+    return None
+
+
 def _format_turns(turns: List[Dict[str, str]]) -> str:
     lines: List[str] = []
     for turn in turns:
@@ -753,7 +780,9 @@ def _call_openai_insights(
     model = os.getenv("OPENAI_MODEL", "gpt-5.2-2025-12-11")
     system_text = (
         "You are a running coach for a single athlete. "
-        "Respond in JSON with keys: answer (string), recommendations (array), follow_ups (array). "
+        "Respond in JSON with keys: answer (string), today_recommendation (string), "
+        "trend_insight (string), predicted_5k_time_s (number or null), "
+        "predicted_10k_time_s (number or null), recommendations (array), follow_ups (array). "
         "Be concise, avoid medical claims, and ask follow-ups if context is missing. "
         "Return valid JSON only."
     )
@@ -929,6 +958,10 @@ def insights_evaluate(payload: InsightsEvaluateRequest, user=Depends(get_current
     provider = "deterministic"
     model = None
     llm_error = None
+    today_recommendation = None
+    trend_insight = None
+    predicted_5k_time_s = None
+    predicted_10k_time_s = None
 
     if dist_28d_km is None or dist_28d_km == 0:
         recommendations.append("Start with an easy 20–30 min run or walk today.")
@@ -965,6 +998,18 @@ def insights_evaluate(payload: InsightsEvaluateRequest, user=Depends(get_current
     if dist_28d_km is not None:
         volume_clause += f", 28d: {dist_28d_km:.1f} km"
     answer = f"Trend summary: {pace_clause}, {hr_clause}. {volume_clause}. This is general guidance; listen to your body."
+    trend_insight = f"{pace_clause}. {hr_clause}."
+    if recommendations:
+        today_recommendation = recommendations[0]
+    summary_source = (
+        window_summaries.get("requested")
+        or window_summaries.get("12m")
+        or window_summaries.get("3y")
+        or {}
+    )
+    if isinstance(summary_source, dict):
+        predicted_5k_time_s = summary_source.get("best_5k_time_s")
+        predicted_10k_time_s = summary_source.get("best_10k_time_s")
 
     llm_payload, model, llm_error = _call_openai_insights(
         payload.question,
@@ -976,6 +1021,26 @@ def insights_evaluate(payload: InsightsEvaluateRequest, user=Depends(get_current
     if llm_payload:
         provider = "openai"
         answer = str(llm_payload.get("answer") or answer).strip() or answer
+        today_recommendation = (
+            str(llm_payload.get("today_recommendation") or today_recommendation).strip()
+            if (llm_payload.get("today_recommendation") or today_recommendation)
+            else today_recommendation
+        )
+        trend_insight = (
+            str(llm_payload.get("trend_insight") or trend_insight).strip()
+            if (llm_payload.get("trend_insight") or trend_insight)
+            else trend_insight
+        )
+        predicted_5k_time_s = _coerce_time_seconds(
+            llm_payload.get("predicted_5k_time_s")
+            or llm_payload.get("predicted_5k")
+            or predicted_5k_time_s
+        )
+        predicted_10k_time_s = _coerce_time_seconds(
+            llm_payload.get("predicted_10k_time_s")
+            or llm_payload.get("predicted_10k")
+            or predicted_10k_time_s
+        )
         recommendations = _coerce_list(llm_payload.get("recommendations"), limit=3) or recommendations
         follow_ups = _coerce_list(llm_payload.get("follow_ups"), limit=3) or follow_ups
     elif llm_error and llm_error != "missing_api_key":
@@ -986,6 +1051,10 @@ def insights_evaluate(payload: InsightsEvaluateRequest, user=Depends(get_current
     response_payload = {
         "status": "ok",
         "answer": answer,
+        "today_recommendation": today_recommendation,
+        "trend_insight": trend_insight,
+        "predicted_5k_time_s": predicted_5k_time_s,
+        "predicted_10k_time_s": predicted_10k_time_s,
         "recommendations": recommendations,
         "follow_ups": follow_ups,
         "session_id": session_id,
@@ -1014,6 +1083,10 @@ def insights_evaluate(payload: InsightsEvaluateRequest, user=Depends(get_current
                         "provider": provider,
                         "model": model,
                         "answer": answer,
+                        "today_recommendation": today_recommendation,
+                        "trend_insight": trend_insight,
+                        "predicted_5k_time_s": predicted_5k_time_s,
+                        "predicted_10k_time_s": predicted_10k_time_s,
                         "recommendations": recommendations,
                         "follow_ups": follow_ups,
                     }
