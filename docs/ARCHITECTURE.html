@@ -83,7 +83,7 @@
     <div class="pill">Fitness Platform • Architecture Snapshot</div>
     <h1>Architecture + Data Model</h1>
     <p>This document captures the system architecture, data flow, and the current data model so we can align product and engineering on what exists today and what we are hardening next.</p>
-    <p class="pill">Last updated: 2026-02-05</p>
+    <p class="pill">Last updated: 2026-02-10</p>
   </header>
 
   <section class="container">
@@ -98,27 +98,27 @@
         </defs>
         <rect x="20" y="30" width="200" height="70" rx="14" fill="url(#panel)" stroke="#2a2a2a"/>
         <text x="120" y="60" text-anchor="middle" fill="#0ea5e9" font-size="14" font-weight="600">External Sources</text>
-        <text x="120" y="80" text-anchor="middle" fill="#a3a3a3" font-size="11">Strava • Weather • Golf (next)</text>
+        <text x="120" y="80" text-anchor="middle" fill="#a3a3a3" font-size="11">Strava • Weather • (future sources)</text>
 
         <rect x="250" y="30" width="200" height="70" rx="14" fill="url(#panel)" stroke="#2a2a2a"/>
-        <text x="350" y="60" text-anchor="middle" fill="#0ea5e9" font-size="14" font-weight="600">Ingestion Service</text>
-        <text x="350" y="80" text-anchor="middle" fill="#a3a3a3" font-size="11">Fetch + backfill + hourly sync</text>
+        <text x="350" y="60" text-anchor="middle" fill="#0ea5e9" font-size="14" font-weight="600">Ingestion Worker</text>
+        <text x="350" y="80" text-anchor="middle" fill="#a3a3a3" font-size="11">Strava API sync + backfill + hourly</text>
 
         <rect x="480" y="30" width="200" height="70" rx="14" fill="url(#panel)" stroke="#2a2a2a"/>
-        <text x="580" y="60" text-anchor="middle" fill="#0ea5e9" font-size="14" font-weight="600">Processing</text>
+        <text x="580" y="60" text-anchor="middle" fill="#0ea5e9" font-size="14" font-weight="600">Processing Pipeline</text>
         <text x="580" y="80" text-anchor="middle" fill="#a3a3a3" font-size="11">Normalize + metrics + zones + segments</text>
 
         <rect x="710" y="30" width="200" height="70" rx="14" fill="url(#panel)" stroke="#2a2a2a"/>
         <text x="810" y="60" text-anchor="middle" fill="#0ea5e9" font-size="14" font-weight="600">Storage</text>
-        <text x="810" y="80" text-anchor="middle" fill="#a3a3a3" font-size="11">SQLite (raw + norm + calc + views)</text>
+        <text x="810" y="80" text-anchor="middle" fill="#a3a3a3" font-size="11">SQLite (raw + norm + calc + memory)</text>
 
         <rect x="940" y="30" width="140" height="70" rx="14" fill="url(#panel)" stroke="#2a2a2a"/>
         <text x="1010" y="60" text-anchor="middle" fill="#0ea5e9" font-size="14" font-weight="600">API</text>
-        <text x="1010" y="80" text-anchor="middle" fill="#a3a3a3" font-size="11">FastAPI + Auth (JWT)</text>
+        <text x="1010" y="80" text-anchor="middle" fill="#a3a3a3" font-size="11">FastAPI + JWT + Insights</text>
 
         <rect x="710" y="140" width="370" height="85" rx="14" fill="url(#panel)" stroke="#2a2a2a"/>
         <text x="895" y="168" text-anchor="middle" fill="#10b981" font-size="14" font-weight="600">Web App</text>
-        <text x="895" y="188" text-anchor="middle" fill="#a3a3a3" font-size="11">React • Vite • Dashboards + Insights</text>
+        <text x="895" y="188" text-anchor="middle" fill="#a3a3a3" font-size="11">React • Vite • Dashboards + Assistant</text>
 
         <rect x="250" y="140" width="410" height="85" rx="14" fill="url(#panel)" stroke="#2a2a2a"/>
         <text x="455" y="168" text-anchor="middle" fill="#10b981" font-size="14" font-weight="600">Data Layers</text>
@@ -126,7 +126,11 @@
 
         <rect x="20" y="250" width="420" height="80" rx="14" fill="url(#panel)" stroke="#2a2a2a"/>
         <text x="230" y="278" text-anchor="middle" fill="#10b981" font-size="13" font-weight="600">Observability</text>
-        <text x="230" y="296" text-anchor="middle" fill="#a3a3a3" font-size="11">pipeline runs • health endpoint • logs</text>
+        <text x="230" y="296" text-anchor="middle" fill="#a3a3a3" font-size="11">job runs • metrics endpoint • logs • dead letters</text>
+
+        <rect x="460" y="250" width="280" height="80" rx="14" fill="url(#panel)" stroke="#2a2a2a"/>
+        <text x="600" y="278" text-anchor="middle" fill="#f59e0b" font-size="13" font-weight="600">LLM Assistant</text>
+        <text x="600" y="296" text-anchor="middle" fill="#a3a3a3" font-size="11">GPT‑5.2 • summaries • memory</text>
 
         <line x1="220" y1="65" x2="250" y2="65" stroke="#3b82f6" stroke-width="2"/>
         <line x1="450" y1="65" x2="480" y2="65" stroke="#3b82f6" stroke-width="2"/>
@@ -134,6 +138,7 @@
         <line x1="910" y1="65" x2="940" y2="65" stroke="#3b82f6" stroke-width="2"/>
         <line x1="810" y1="100" x2="810" y2="140" stroke="#3b82f6" stroke-width="2"/>
         <line x1="580" y1="100" x2="580" y2="140" stroke="#10b981" stroke-width="2"/>
+        <line x1="895" y1="225" x2="600" y2="250" stroke="#f59e0b" stroke-width="2"/>
       </svg>
     </div>
 
@@ -193,6 +198,10 @@
         <text x="630" y="350" text-anchor="middle" fill="#f59e0b" font-size="13" font-weight="600">refresh_tokens</text>
         <text x="630" y="370" text-anchor="middle" fill="#a3a3a3" font-size="11">token, expires_at, revoked</text>
 
+        <rect x="780" y="320" width="260" height="80" rx="14" fill="url(#box)" stroke="#2a2a2a"/>
+        <text x="910" y="350" text-anchor="middle" fill="#f59e0b" font-size="13" font-weight="600">assistant_memory</text>
+        <text x="910" y="370" text-anchor="middle" fill="#a3a3a3" font-size="11">summary_json, updated_at</text>
+
         <line x1="240" y1="90" x2="260" y2="90" stroke="#3b82f6" stroke-width="2"/>
         <line x1="500" y1="90" x2="520" y2="90" stroke="#3b82f6" stroke-width="2"/>
         <line x1="760" y1="90" x2="780" y2="90" stroke="#3b82f6" stroke-width="2"/>
@@ -203,26 +212,27 @@
         <line x1="910" y1="140" x2="430" y2="180" stroke="#10b981" stroke-width="2"/>
         <line x1="130" y1="140" x2="710" y2="180" stroke="#10b981" stroke-width="2"/>
       </svg>
-      <p style="margin-top: 12px;">Also present: <strong>sources</strong> (ingestion source registry), <strong>schema_migrations</strong>, and supporting indexes.</p>
+      <p style="margin-top: 12px;">Also present: <strong>sources</strong>, <strong>context_events</strong>, <strong>insight_sessions</strong> (chat history), <strong>job_state</strong>, <strong>job_runs</strong>, <strong>job_dead_letters</strong>, <strong>schema_migrations</strong>, and supporting indexes.</p>
     </div>
 
     <div class="grid-2">
       <div class="card">
         <h3>What is working now</h3>
         <ul>
-          <li>Scheduled ingestion and processing pipelines</li>
-          <li>API contracts for summary + series + route + laps + insights</li>
-          <li>Front-end components wired to live data + trend routes</li>
-          <li>Route map rendering on activity detail</li>
+          <li>Strava API sync + hourly pipeline with job runs + dead letters</li>
+          <li>Insights assistant (GPT‑5.2) with multi‑window summaries</li>
+          <li>Assistant chat sessions + memory compaction</li>
+          <li>API contracts for summary + series + routes + insights</li>
+          <li>Web app dashboards + assistant drawer + sync‑on‑load</li>
         </ul>
       </div>
       <div class="card">
         <h3>Key gaps before production</h3>
         <ul>
-          <li>Security hardening + JWT rotation + rate limits</li>
-          <li>Data integrity constraints and DB migration strategy</li>
-          <li>Observability + alerting on pipeline failures</li>
-          <li>CI/CD pipeline to AWS with staging</li>
+          <li>Rate limiting + account recovery + multi‑user controls</li>
+          <li>Postgres migration + backups + automated restores</li>
+          <li>Alerting (Sentry/OTel) and production metrics dashboards</li>
+          <li>CI/CD with staging + Terraform/IaC</li>
         </ul>
       </div>
     </div>
