@@ -41,6 +41,48 @@ def _format_pace_sec_per_km(pace_sec: float | None) -> str | None:
     return f"{minutes}:{seconds:02d}/km"
 
 
+def _best_run_in_distance_window(
+    conn,
+    user_id: int,
+    min_m: float,
+    max_m: float,
+    start_time_after: str | None = None,
+):
+    cur = conn.cursor()
+    clause = ""
+    params: list[object] = [user_id, min_m, max_m]
+    if start_time_after:
+        clause = " AND a.start_time >= ?"
+        params.append(start_time_after)
+    cur.execute(
+        f"""
+        SELECT a.activity_id, a.start_time, c.distance_m, c.moving_s
+        FROM activities a
+        JOIN activities_calc c ON c.activity_id = a.activity_id
+        WHERE a.user_id = ?
+          AND lower(a.activity_type) = 'run'
+          AND c.distance_m IS NOT NULL
+          AND c.moving_s IS NOT NULL
+          AND c.moving_s > 0
+          AND c.distance_m >= ?
+          AND c.distance_m <= ?
+          {clause}
+        ORDER BY c.moving_s ASC
+        LIMIT 1
+        """
+    , tuple(params))
+    row = cur.fetchone()
+    if not row:
+        return None
+    activity_id, start_time, distance_m, moving_s = row
+    return {
+        "activity_id": activity_id,
+        "start_time": start_time,
+        "distance_m": distance_m,
+        "moving_s": moving_s,
+    }
+
+
 def _predict_riegel_from_best_pace_activity(
     conn,
     user_id: int,
@@ -266,10 +308,15 @@ def insights(user=Depends(get_current_user)):
             # PBs from segments (if available).
             cur.execute(
                 """
-                SELECT distance_m, time_s, activity_id, date
-                FROM segments_best
-                WHERE scope = 'best_all' AND distance_m IN (5000, 10000)
+                SELECT sb.distance_m, sb.time_s, sb.activity_id, sb.date
+                FROM segments_best sb
+                JOIN activities a ON a.activity_id = sb.activity_id
+                WHERE a.user_id = ?
+                  AND sb.scope = 'best_all'
+                  AND sb.distance_m IN (5000, 10000)
                 """
+                ,
+                (user["id"],),
             )
             pb_all: Dict[int, Dict[str, object]] = {}
             for dist, time_s, activity_id, date in cur.fetchall():
@@ -278,6 +325,24 @@ def insights(user=Depends(get_current_user)):
                     "activity_id": activity_id,
                     "date": date,
                 }
+
+            # Fallback PBs from full runs if segments_best isn't populated (Postgres + API-only mode).
+            if 5000 not in pb_all:
+                best_5k = _best_run_in_distance_window(conn, user["id"], 4500, 5500)
+                if best_5k:
+                    pb_all[5000] = {
+                        "time_s": best_5k["moving_s"],
+                        "activity_id": best_5k["activity_id"],
+                        "date": best_5k["start_time"],
+                    }
+            if 10000 not in pb_all:
+                best_10k = _best_run_in_distance_window(conn, user["id"], 9000, 11000)
+                if best_10k:
+                    pb_all[10000] = {
+                        "time_s": best_10k["moving_s"],
+                        "activity_id": best_10k["activity_id"],
+                        "date": best_10k["start_time"],
+                    }
 
             cur.execute(
                 """
@@ -349,6 +414,22 @@ def insights(user=Depends(get_current_user)):
                             "pace": pace,
                         }
 
+            # Prefer "true" 5k/10k runs when they exist.
+            best_5k_12m = _best_run_in_distance_window(conn, user["id"], 4500, 5500, one_year_ago)
+            if best_5k_12m:
+                best_12m[5000] = {
+                    "time_s": best_5k_12m["moving_s"],
+                    "activity_id": best_5k_12m["activity_id"],
+                    "date": best_5k_12m["start_time"],
+                }
+            best_10k_12m = _best_run_in_distance_window(conn, user["id"], 9000, 11000, one_year_ago)
+            if best_10k_12m:
+                best_12m[10000] = {
+                    "time_s": best_10k_12m["moving_s"],
+                    "activity_id": best_10k_12m["activity_id"],
+                    "date": best_10k_12m["start_time"],
+                }
+
             # Estimated bests from segment PBs (Riegel).
             cur.execute(
                 """
@@ -376,6 +457,13 @@ def insights(user=Depends(get_current_user)):
                 est_10k = riegel(segment_best[5000], 5000, 10000)
             elif 10000 in segment_best:
                 est_5k = riegel(segment_best[10000], 10000, 5000)
+            elif best_source and best_source.get("distance_m") and best_source.get("moving_s"):
+                # Fallback estimate: riegel from best VDOT-eligible full run.
+                d1 = float(best_source["distance_m"])
+                t1 = float(best_source["moving_s"])
+                if d1 > 0 and t1 > 0:
+                    est_5k = riegel(t1, d1, 5000)
+                    est_10k = riegel(t1, d1, 10000)
 
             cur.execute(
                 """
