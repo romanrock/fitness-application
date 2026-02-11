@@ -1,5 +1,6 @@
 import sqlite3
 from pathlib import Path
+import datetime
 from typing import Iterable, Optional
 
 import packages.config as config
@@ -44,14 +45,29 @@ class DBCursor:
         return self
 
     def fetchone(self):
-        return self._cursor.fetchone()
+        row = self._cursor.fetchone()
+        if not self._postgres or row is None:
+            return row
+        return tuple(self._coerce(v) for v in row)
 
     def fetchall(self):
-        return self._cursor.fetchall()
+        rows = self._cursor.fetchall()
+        if not self._postgres or not rows:
+            return rows
+        return [tuple(self._coerce(v) for v in row) for row in rows]
 
     @property
     def lastrowid(self):
         return getattr(self._cursor, "lastrowid", None)
+
+    @staticmethod
+    def _coerce(value):
+        # Keep API/pipeline behavior consistent across SQLite/Postgres:
+        # - SQLite returns TEXT for timestamps
+        # - psycopg2 returns datetime/date objects
+        if isinstance(value, (datetime.datetime, datetime.date)):
+            return value.isoformat()
+        return value
 
     def __iter__(self):
         return iter(self._cursor)
