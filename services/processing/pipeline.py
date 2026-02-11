@@ -178,6 +178,60 @@ def compute_pace_series(time: List[float], dist: List[float]) -> List[Optional[f
     return pace
 
 
+def sanitize_streams(time: List[float], dist: List[float]) -> Tuple[List[float], List[float]]:
+    out_time: List[float] = []
+    out_dist: List[float] = []
+    last_dist = -1.0
+    for t, d in zip(time, dist):
+        if t is None or d is None:
+            continue
+        try:
+            t_val = float(t)
+            d_val = float(d)
+        except (TypeError, ValueError):
+            continue
+        if d_val <= last_dist:
+            continue
+        out_time.append(t_val)
+        out_dist.append(d_val)
+        last_dist = d_val
+    return out_time, out_dist
+
+
+def best_segment_time(time: List[float], dist: List[float], target_m: float) -> Optional[float]:
+    if not time or not dist or len(time) != len(dist):
+        return None
+    n = len(time)
+    j = 0
+    best = None
+    for i in range(n):
+        if j < i:
+            j = i
+        start_d = dist[i]
+        while j < n and (dist[j] - start_d) < target_m:
+            j += 1
+        if j >= n:
+            break
+        dt = time[j] - time[i]
+        if dt <= 0:
+            continue
+        if best is None or dt < best:
+            best = dt
+    return best
+
+
+def compute_activity_segments(time: List[float], dist: List[float], targets: List[int]) -> Dict[int, float]:
+    clean_time, clean_dist = sanitize_streams(time, dist)
+    if not clean_time or not clean_dist:
+        return {}
+    out: Dict[int, float] = {}
+    for target in targets:
+        best = best_segment_time(clean_time, clean_dist, float(target))
+        if best is not None:
+            out[target] = best
+    return out
+
+
 def smooth_pace(time: List[float], dist: List[float]) -> Tuple[List[Optional[float]], Optional[float]]:
     pace = compute_pace_series(time, dist)
     pace = clamp_values(pace, 150, 900)
@@ -790,6 +844,10 @@ def process():
             "SELECT source_id, activity_id, start_time, raw_json, user_id FROM activities_raw"
         ).fetchall()
         runs_for_weekly: List[dict] = []
+        segment_targets = [400, 800, 1000, 1500, 3000, 5000, 10000]
+        best_all: Dict[int, Tuple[float, str, str]] = {}
+        best_12w: Dict[int, Tuple[float, str, str]] = {}
+        cutoff_12w = started_at - timedelta(days=84)
 
         try:
             for source_id, activity_id, start_time, raw_json, user_id in rows:
@@ -925,6 +983,35 @@ def process():
                 )
 
                 if activity_type.lower() == "run":
+                    # Build per-activity segments from streams and update bests.
+                    activity_segments = {}
+                    if time_stream and dist_stream and len(time_stream) == len(dist_stream):
+                        activity_segments = compute_activity_segments(
+                            time_stream, dist_stream, segment_targets
+                        )
+                    if activity_segments:
+                        conn.execute(
+                            "DELETE FROM segments_best WHERE scope='activity' AND activity_id=?",
+                            (activity_id,),
+                        )
+                        for distance_m, time_s in activity_segments.items():
+                            conn.execute(
+                                """
+                                INSERT INTO segments_best(distance_m, time_s, activity_id, scope, date)
+                                VALUES(?, ?, ?, 'activity', ?)
+                                """,
+                                (distance_m, time_s, activity_id, start_time),
+                            )
+                        start_dt = parse_dt(start_time)
+                        for distance_m, time_s in activity_segments.items():
+                            current = best_all.get(distance_m)
+                            if current is None or time_s < current[0]:
+                                best_all[distance_m] = (time_s, activity_id, start_time)
+                            if start_dt and start_dt >= cutoff_12w:
+                                current_12w = best_12w.get(distance_m)
+                                if current_12w is None or time_s < current_12w[0]:
+                                    best_12w[distance_m] = (time_s, activity_id, start_time)
+
                     upsert_activity_run_details(
                         conn,
                         {
@@ -972,6 +1059,27 @@ def process():
                     )
 
             conn.commit()
+
+            # Refresh best_all / best_12w from activity segments.
+            if best_all or best_12w:
+                conn.execute("DELETE FROM segments_best WHERE scope IN ('best_all', 'best_12w')")
+                for distance_m, (time_s, act_id, date) in best_all.items():
+                    conn.execute(
+                        """
+                        INSERT INTO segments_best(distance_m, time_s, activity_id, scope, date)
+                        VALUES(?, ?, ?, 'best_all', ?)
+                        """,
+                        (distance_m, time_s, act_id, date),
+                    )
+                for distance_m, (time_s, act_id, date) in best_12w.items():
+                    conn.execute(
+                        """
+                        INSERT INTO segments_best(distance_m, time_s, activity_id, scope, date)
+                        VALUES(?, ?, ?, 'best_12w', ?)
+                        """,
+                        (distance_m, time_s, act_id, date),
+                    )
+                conn.commit()
 
             status = "ok"
         except Exception as exc:
