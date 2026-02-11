@@ -688,19 +688,6 @@ def _summarize_window(conn, user_id: int, start_dt: datetime, end_dt: datetime):
 
     cur.execute(
         """
-        SELECT COUNT(DISTINCT strftime('%Y-%W', start_time))
-        FROM activities
-        WHERE user_id = ?
-          AND lower(activity_type) = 'run'
-          AND start_time >= ?
-          AND start_time <= ?
-        """,
-        (user_id, start_iso, end_iso),
-    )
-    weeks_with_runs = (cur.fetchone() or [0])[0] or 0
-
-    cur.execute(
-        """
         SELECT start_time
         FROM activities
         WHERE user_id = ?
@@ -713,6 +700,8 @@ def _summarize_window(conn, user_id: int, start_dt: datetime, end_dt: datetime):
     )
     times = [_parse_dt(r[0]) for r in cur.fetchall()]
     times = [t for t in times if t is not None]
+    # Keep this computation in Python to stay compatible across SQLite/Postgres.
+    weeks_with_runs = len({week_key(t) for t in times}) if times else 0
     longest_gap_days = None
     if len(times) >= 2:
         gaps = []
@@ -736,19 +725,23 @@ def _summarize_window(conn, user_id: int, start_dt: datetime, end_dt: datetime):
 
     cur.execute(
         """
-        SELECT strftime('%Y', a.start_time) as yr, SUM(c.distance_m)
+        SELECT a.start_time, c.distance_m
         FROM activities a
         JOIN activities_calc c ON c.activity_id = a.activity_id
         WHERE a.user_id = ?
           AND lower(a.activity_type) = 'run'
           AND a.start_time >= ?
           AND a.start_time <= ?
-        GROUP BY yr
-        ORDER BY yr
         """,
         (user_id, start_iso, end_iso),
     )
-    yearly = {r[0]: (r[1] or 0) / 1000.0 for r in cur.fetchall() if r[0]}
+    yearly: Dict[str, float] = {}
+    for start_time, distance_m in cur.fetchall():
+        dt = _parse_dt(start_time)
+        if not dt:
+            continue
+        yr = str(dt.year)
+        yearly[yr] = yearly.get(yr, 0.0) + ((distance_m or 0.0) / 1000.0)
 
     return {
         "start": start_iso,

@@ -18,8 +18,8 @@ Non‑goal: rewrite the app around a full ORM; keep SQL + migrations working.
 ## Phase 2C — Data migration path
 - Add export script for SQLite → CSV (one file per table).
 - Add import script for Postgres using `COPY` (or `psql \\copy`).
-- Preserve `user_id`, `source_id`, and timestamps.
-- Validate row counts + spot check a few activities.
+  - Preserve `user_id`, `source_id`, and timestamps.
+  - Validate row counts + spot check a few activities.
 
 ## Phase 2D — Cutover + rollback
 - Cutover plan: stop app → export → import → run migrations → start app.
@@ -35,6 +35,10 @@ Non‑goal: rewrite the app around a full ORM; keep SQL + migrations working.
 - `FITNESS_DB_URL=postgresql://...` set in `.env`
 - `python3 scripts/migrate_db.py`
 - Optional: run `python3 scripts/smoke_api.py`
+
+## Scripts shipped
+- Export SQLite to CSV: `python3 scripts/sqlite_export_csv.py --sqlite-path ./data/fitness.db`
+- Import CSV to Postgres: `python3 scripts/pg_import_csv.py --csv-dir ./data/sqlite_export_<timestamp> --db-url "$FITNESS_DB_URL"`
 
 ## Acceptance criteria
 - Migrations run cleanly on Postgres.
