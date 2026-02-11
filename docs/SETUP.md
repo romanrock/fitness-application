@@ -56,7 +56,7 @@ Note: API runs on `http://127.0.0.1:8000`, web runs on `http://127.0.0.1:8788`.
 python3 scripts/init_db.py
 python3 scripts/migrate_db.py
 python3 services/ingestion/strava_import.py
-python3 services/ingestion/weather_import.py
+python3 services/ingestion/weather_api_import.py
 python3 services/processing/pipeline.py
 ```
 
@@ -120,6 +120,7 @@ STRAVA_CLIENT_ID=...
 STRAVA_CLIENT_SECRET=...
 STRAVA_REFRESH_TOKEN=...
 FITNESS_STRAVA_USER_ID=...
+FITNESS_WEATHER_API_ENABLED=1
 # Optional legacy/backfill mode (deprecated): import local artifacts from a strava-local-ingest checkout.
 # FITNESS_ENABLE_LOCAL_ARTIFACT_IMPORT=1
 # STRAVA_LOCAL_PATH=/app/strava-local-ingest

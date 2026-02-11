@@ -39,6 +39,23 @@ curl -s https://roman-fitness.duckdns.org/api/job_dead_letters -H "Authorization
 curl -s https://roman-fitness.duckdns.org/api/metrics | grep pipeline_step
 ```
 
+## Backfill Strava streams (segments/PBs)
+```
+docker-compose exec -T api python services/ingestion/strava_streams_backfill.py --limit 200 --sleep 0.5
+```
+
+## Backfill weather (Open-Meteo)
+```
+docker-compose exec -T api python services/ingestion/weather_api_import.py --limit 200 --sleep 0.2
+```
+
+## Verify segments exist for a run
+```
+ACT_ID=1234567890
+docker-compose exec -T api python scripts/diagnose_activity.py "$ACT_ID"
+curl -s "https://roman-fitness.duckdns.org/api/activity/${ACT_ID}/segments" -H "Authorization: Bearer $TOKEN"
+```
+
 ## Clear stale pipeline lock (last resort)
 ```
 rm -f /home/ec2-user/fitness-platform/data/fitness_pipeline.lock

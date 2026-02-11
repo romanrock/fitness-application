@@ -40,6 +40,11 @@ def run_ingestion_pipeline(use_lock: bool = True) -> bool:
         ok = _run_step("migrate", [py, str(root / "scripts" / "migrate_db.py")])
         if config.STRAVA_API_ENABLED:
             ok = _run_step("strava_api", [py, str(root / "services" / "ingestion" / "strava_api_import.py")]) and ok
+            if config.WEATHER_API_ENABLED:
+                ok = _run_step(
+                    "weather_api",
+                    [py, str(root / "services" / "ingestion" / "weather_api_import.py")],
+                ) and ok
         elif config.RUN_STRAVA_SYNC and (config.STRAVA_LOCAL_PATH / "run_all.js").exists():
             ok = _run_step(
                 "strava_local",
