@@ -15,9 +15,6 @@ if str(ROOT) not in sys.path:
 from packages import db
 from packages.config import (
     REFRESH_SECONDS,
-    RUN_STRAVA_SYNC,
-    STRAVA_API_ENABLED,
-    STRAVA_LOCAL_PATH,
     PIPELINE_MAX_RETRIES,
     PIPELINE_BACKOFF_BASE_SEC,
     PIPELINE_BACKOFF_MAX_SEC,
@@ -25,6 +22,7 @@ from packages.config import (
     PIPELINE_COOLDOWN_SEC,
 )
 from packages.error_reporting import init_error_reporting
+from packages.ingestion_runner import run_ingestion_pipeline
 from packages.logging_utils import setup_logging
 from packages.pipeline_lock import pipeline_lock
 from packages.job_state import (
@@ -35,7 +33,6 @@ from packages.job_state import (
     finish_job_run,
     record_dead_letter,
 )
-from packages.metrics import inc, observe
 from packages.request_context import job_run_context
 
 
@@ -44,48 +41,16 @@ init_error_reporting("worker")
 logger = logging.getLogger("fitness.worker")
 
 
-def run(cmd, cwd=None):
-    subprocess.run(cmd, check=True, cwd=cwd or str(ROOT))
-
-
-def run_with_retry(cmd, cwd=None, retries=2, delay=3):
-    for attempt in range(retries + 1):
-        try:
-            run(cmd, cwd=cwd)
-            return
-        except subprocess.CalledProcessError as exc:
-            if attempt >= retries:
-                raise
-            logger.warning("Retrying after error: %s", exc)
-            time.sleep(delay)
-
-
-def venv_python():
-    venv = ROOT / ".venv" / ("Scripts" if sys.platform.startswith("win") else "bin") / (
-        "python.exe" if sys.platform.startswith("win") else "python"
-    )
-    return venv if venv.exists() else None
-
-
 def run_pipeline_once():
-    py = venv_python() or sys.executable
     with pipeline_lock() as acquired:
         if not acquired:
             logger.info("Pipeline lock active; skipping ingestion run.")
             return
         if not db.db_exists():
-            _run_step("init_db", [str(py), str(ROOT / "scripts" / "init_db.py")])
-        _run_step("migrate", [str(py), str(ROOT / "scripts" / "migrate_db.py")])
-        if STRAVA_API_ENABLED:
-            _run_step("strava_api", [str(py), str(ROOT / "services" / "ingestion" / "strava_api_import.py")])
-        elif RUN_STRAVA_SYNC and (STRAVA_LOCAL_PATH / "run_all.js").exists():
-            _run_step("strava_local", ["node", str(STRAVA_LOCAL_PATH / "run_all.js")], cwd=str(STRAVA_LOCAL_PATH))
-        elif RUN_STRAVA_SYNC:
-            logger.warning("STRAVA_LOCAL_PATH missing run_all.js: %s", STRAVA_LOCAL_PATH)
-        _run_step("strava_import", [str(py), str(ROOT / "services" / "ingestion" / "strava_import.py")])
-        _run_step("weather_import", [str(py), str(ROOT / "services" / "ingestion" / "weather_import.py")])
-        _run_step("segments_import", [str(py), str(ROOT / "services" / "ingestion" / "segments_import.py")])
-        _run_step("pipeline", [str(py), str(ROOT / "services" / "processing" / "pipeline.py")])
+            subprocess.run([sys.executable, str(ROOT / "scripts" / "init_db.py")], check=True)
+        ok = run_ingestion_pipeline(use_lock=False)
+        if not ok:
+            raise subprocess.CalledProcessError(1, ["fitness_pipeline"])
         logger.info("Pipeline complete")
 
 
@@ -93,19 +58,6 @@ def _backoff_seconds(attempt: int) -> float:
     base = PIPELINE_BACKOFF_BASE_SEC * (2 ** max(attempt - 1, 0))
     jitter = random.uniform(0.8, 1.2)
     return min(base * jitter, PIPELINE_BACKOFF_MAX_SEC)
-
-
-def _run_step(step: str, cmd: list[str], cwd: str | None = None) -> None:
-    start = time.perf_counter()
-    try:
-        run_with_retry(cmd, cwd=cwd)
-        inc(f"pipeline_step_runs_total{{step=\"{step}\"}}")
-    except subprocess.CalledProcessError:
-        inc(f"pipeline_step_runs_total{{step=\"{step}\"}}")
-        inc(f"pipeline_step_failures_total{{step=\"{step}\"}}")
-        raise
-    finally:
-        observe(f"pipeline_step_duration_seconds{{step=\"{step}\"}}", time.perf_counter() - start)
 
 
 def _run_with_retries() -> tuple[bool, str | None, int]:

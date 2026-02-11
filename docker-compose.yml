@@ -1,4 +1,3 @@
-version: "3.8"
 services:
   api:
     build:
@@ -37,12 +36,10 @@ services:
       dockerfile: Dockerfile.worker
     volumes:
       - ./data:/app/data
-      - ../strava-local-ingest:/app/strava-local-ingest
     environment:
       - RUN_MODE=prod
       - FITNESS_DB_URL=${FITNESS_DB_URL}
       - FITNESS_DB_PATH=/app/data/fitness.db
-      - STRAVA_LOCAL_PATH=/app/strava-local-ingest
       - RUN_STRAVA_SYNC=${RUN_STRAVA_SYNC:-0}
       - PYTHONPATH=/app
       - STRAVA_API_ENABLED=${STRAVA_API_ENABLED:-0}
@@ -76,7 +73,8 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      - DOMAIN=${DOMAIN:-http://localhost}
+      # Default to HTTP-only on :80 for local dev; set DOMAIN to a real hostname in prod for HTTPS.
+      - DOMAIN=${DOMAIN:-:80}
     volumes:
       - ./infra/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

@@ -196,8 +196,11 @@ def smooth_cadence(cadence: List[Optional[float]]) -> Tuple[List[Optional[float]
     if med and med < 120:
         cadence = [v * 2 if v is not None else None for v in cadence]
     cadence = clamp_values(cadence, 120, 240)
+    # For summary metrics (stride length, etc) we want the average cadence to reflect
+    # the underlying stream, not the EMA-initialization bias of a smoothed series.
+    cadence_avg = mean(cadence)
     cadence = ema(cadence, alpha=0.2)
-    return cadence, mean(cadence)
+    return cadence, cadence_avg
 
 
 def smooth_hr(hr: List[Optional[float]]) -> Tuple[List[Optional[float]], Optional[float]]:

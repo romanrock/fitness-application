@@ -136,6 +136,21 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
+-- State for Strava API sync (created by migrations in prod; included here for test fixtures/bootstrap).
+CREATE TABLE IF NOT EXISTS source_sync_state (
+  id INTEGER PRIMARY KEY,
+  source_id INTEGER NOT NULL,
+  user_id INTEGER NOT NULL,
+  last_activity_time INTEGER,
+  access_token TEXT,
+  refresh_token TEXT,
+  expires_at INTEGER,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(source_id, user_id),
+  FOREIGN KEY (source_id) REFERENCES sources(id),
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
 CREATE TABLE IF NOT EXISTS context_events (
   id INTEGER PRIMARY KEY,
   user_id INTEGER NOT NULL,

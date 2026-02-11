@@ -115,8 +115,15 @@ FITNESS_AUTH_DISABLED=0
 FITNESS_JWT_SECRET=change-me
 FITNESS_JWT_EXP_MINUTES=60
 FITNESS_DB_PATH=/app/data/fitness.db
-STRAVA_LOCAL_PATH=/app/strava-local-ingest
-RUN_STRAVA_SYNC=1
+STRAVA_API_ENABLED=1
+STRAVA_CLIENT_ID=...
+STRAVA_CLIENT_SECRET=...
+STRAVA_REFRESH_TOKEN=...
+FITNESS_STRAVA_USER_ID=...
+# Optional legacy/backfill mode (deprecated): import local artifacts from a strava-local-ingest checkout.
+# FITNESS_ENABLE_LOCAL_ARTIFACT_IMPORT=1
+# STRAVA_LOCAL_PATH=/app/strava-local-ingest
+# RUN_STRAVA_SYNC=1
 FITNESS_CORS_ORIGINS=https://your-domain.example
 FITNESS_REFRESH_ENABLED=0
 FITNESS_REFRESH_TTL_DAYS=14
@@ -135,7 +142,8 @@ docker compose up -d --build
 
 3) Create user:
 ```bash
-python3 scripts/create_user.py yourname yourpassword --assign-existing
+# Prefer running admin scripts inside the API container in prod (host Python may not have deps).
+docker compose exec -T api python scripts/create_user.py yourname yourpassword --assign-existing
 ```
 
 Optional: verify Sentry is wired (requires `FITNESS_SENTRY_DSN`):

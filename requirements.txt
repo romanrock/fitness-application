@@ -1,7 +1,10 @@
 fastapi==0.128.0
 uvicorn==0.40.0
 pytest==8.3.4
+httpx==0.28.1
 python-dotenv==1.0.1
 PyJWT==2.9.0
-psycopg2-binary==2.9.9
+# psycopg2-binary does not currently ship wheels for all Python versions (e.g. 3.14).
+# Postgres is optional until the prod cutover; skip installing on unsupported interpreters.
+psycopg2-binary==2.9.9; python_version < "3.14"
 sentry-sdk==2.15.0
