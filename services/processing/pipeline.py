@@ -743,29 +743,42 @@ def process():
 
     with db.connect() as conn:
         configure_sqlite(conn)
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS pipeline_runs (
-              id INTEGER PRIMARY KEY,
-              started_at TEXT NOT NULL,
-              finished_at TEXT,
-              status TEXT NOT NULL,
-              activities_processed INTEGER,
-              streams_processed INTEGER,
-              weather_processed INTEGER,
-              message TEXT
+        # SQLite-only bootstrap (Postgres schema is created via migrations_pg).
+        if not db.is_postgres():
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS pipeline_runs (
+                  id INTEGER PRIMARY KEY,
+                  started_at TEXT NOT NULL,
+                  finished_at TEXT,
+                  status TEXT NOT NULL,
+                  activities_processed INTEGER,
+                  streams_processed INTEGER,
+                  weather_processed INTEGER,
+                  message TEXT
+                )
+                """
             )
-            """
-        )
         cur = conn.cursor()
-        cur.execute(
-            """
-            INSERT INTO pipeline_runs(started_at, status)
-            VALUES(?,?)
-            """,
-            (started_at.isoformat(), status),
-        )
-        run_id = cur.lastrowid
+        if db.is_postgres():
+            cur.execute(
+                """
+                INSERT INTO pipeline_runs(started_at, status)
+                VALUES(?, ?)
+                RETURNING id
+                """,
+                (started_at.isoformat(), status),
+            )
+            run_id = (cur.fetchone() or [None])[0]
+        else:
+            cur.execute(
+                """
+                INSERT INTO pipeline_runs(started_at, status)
+                VALUES(?,?)
+                """,
+                (started_at.isoformat(), status),
+            )
+            run_id = cur.lastrowid
         conn.commit()
 
         activities_processed = conn.execute("SELECT COUNT(*) FROM activities_raw").fetchone()[0]
