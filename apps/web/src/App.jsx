@@ -182,6 +182,10 @@ export default function App() {
   }, [apiFetch]);
 
   const handleAskAssistant = useCallback(async (questionOverride = null) => {
+    if (!authToken && !isDev) {
+      setAssistantError('Please sign in to use the assistant.');
+      return;
+    }
     const question = (questionOverride ?? assistantQuestion).trim();
     if (!question) return;
     setAssistantLoading(true);
@@ -232,7 +236,7 @@ export default function App() {
     } finally {
       setAssistantLoading(false);
     }
-  }, [assistantQuestion, apiFetch, assistantSessionId]);
+  }, [assistantQuestion, apiFetch, assistantSessionId, authToken, isDev]);
 
   const handleFollowUp = useCallback((question) => {
     setAssistantQuestion(question);
@@ -253,6 +257,11 @@ export default function App() {
 
   useEffect(() => {
     if (!assistantOpen) return;
+    if (authRequired || (!authToken && !isDev)) {
+      setAssistantOverviewError('Please sign in to load assistant insights.');
+      setAssistantOverviewLoading(false);
+      return;
+    }
     if (assistantOverviewLoading || assistantOverview) return;
     let cancelled = false;
     const controller = new AbortController();
@@ -283,7 +292,10 @@ export default function App() {
     assistantOpen,
     assistantOverviewLoading,
     assistantOverview,
-    apiFetch
+    apiFetch,
+    authRequired,
+    authToken,
+    isDev
   ]);
 
   const handleFeedback = useCallback((value) => {
@@ -425,6 +437,7 @@ export default function App() {
 
   useEffect(() => {
     if (!authRequired) return;
+    setAssistantOpen(false);
     if (routePath !== '/login') {
       authRedirectRef.current = routePath;
       navigate('/login');
@@ -518,6 +531,8 @@ export default function App() {
   }, [routePath, applyActivityFilter, findInsightById, findPerformanceById]);
 
   useEffect(() => {
+    if (authRequired) return;
+    if (!authToken && !isDev) return;
     const load = async () => {
       setOverviewLoading(true);
       setOverviewError(null);
@@ -577,10 +592,12 @@ export default function App() {
       }
     };
     load();
-  }, [apiFetch, isDev, syncNonce]);
+  }, [apiFetch, authRequired, authToken, isDev, syncNonce]);
 
   useEffect(() => {
     if (!activeId) return;
+    if (authRequired) return;
+    if (!authToken && !isDev) return;
     const loadDetail = async () => {
       setDetailLoading(true);
       setDetailError(null);
@@ -620,7 +637,7 @@ export default function App() {
       }
     };
     loadDetail();
-  }, [activeId, apiFetch, isDev]);
+  }, [activeId, apiFetch, authRequired, authToken, isDev]);
 
   useEffect(() => {
     if (screen !== 'activities') return;
