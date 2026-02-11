@@ -114,7 +114,7 @@ def activity_segments(activity_id: str, user=Depends(get_current_user)):
         except Exception:
             return {"segments": {}}
         out = {}
-        for target in (1000, 3000, 5000, 10000):
+        for target in (400, 800, 1000, 1500, 3000, 5000, 10000):
             best = _best_segment_time(time_series, dist_series, float(target))
             if best is not None:
                 out[target] = best

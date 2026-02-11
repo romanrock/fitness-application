@@ -83,6 +83,22 @@ def _best_run_in_distance_window(
     }
 
 
+def _best_run_pb(conn, user_id: int, target_m: int, start_time_after: str | None = None):
+    # Prefer runs whose total distance is very close to the target (avoid a fast 4.6k
+    # being reported as a 5k PB, etc.). Fall back to wider ranges if needed.
+    if target_m == 5000:
+        windows = [(4950, 5100), (4900, 5200), (4800, 5200), (4500, 5500)]
+    elif target_m == 10000:
+        windows = [(9900, 10200), (9800, 10300), (9700, 10300), (9000, 11000)]
+    else:
+        windows = [(target_m * 0.98, target_m * 1.02), (target_m * 0.95, target_m * 1.05)]
+    for lo, hi in windows:
+        best = _best_run_in_distance_window(conn, user_id, lo, hi, start_time_after)
+        if best:
+            return best
+    return None
+
+
 def _predict_riegel_from_best_pace_activity(
     conn,
     user_id: int,
@@ -328,7 +344,7 @@ def insights(user=Depends(get_current_user)):
 
             # Fallback PBs from full runs if segments_best isn't populated (Postgres + API-only mode).
             if 5000 not in pb_all:
-                best_5k = _best_run_in_distance_window(conn, user["id"], 4500, 5500)
+                best_5k = _best_run_pb(conn, user["id"], 5000)
                 if best_5k:
                     pb_all[5000] = {
                         "time_s": best_5k["moving_s"],
@@ -336,7 +352,7 @@ def insights(user=Depends(get_current_user)):
                         "date": best_5k["start_time"],
                     }
             if 10000 not in pb_all:
-                best_10k = _best_run_in_distance_window(conn, user["id"], 9000, 11000)
+                best_10k = _best_run_pb(conn, user["id"], 10000)
                 if best_10k:
                     pb_all[10000] = {
                         "time_s": best_10k["moving_s"],
@@ -415,14 +431,14 @@ def insights(user=Depends(get_current_user)):
                         }
 
             # Prefer "true" 5k/10k runs when they exist.
-            best_5k_12m = _best_run_in_distance_window(conn, user["id"], 4500, 5500, one_year_ago)
+            best_5k_12m = _best_run_pb(conn, user["id"], 5000, one_year_ago)
             if best_5k_12m:
                 best_12m[5000] = {
                     "time_s": best_5k_12m["moving_s"],
                     "activity_id": best_5k_12m["activity_id"],
                     "date": best_5k_12m["start_time"],
                 }
-            best_10k_12m = _best_run_in_distance_window(conn, user["id"], 9000, 11000, one_year_ago)
+            best_10k_12m = _best_run_pb(conn, user["id"], 10000, one_year_ago)
             if best_10k_12m:
                 best_12m[10000] = {
                     "time_s": best_10k_12m["moving_s"],
