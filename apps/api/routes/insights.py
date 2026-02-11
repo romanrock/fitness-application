@@ -101,7 +101,10 @@ def assistant_overview(user=Depends(get_current_user)):
     def compute():
         now_dt = datetime.now(timezone.utc)
         end_iso = now_dt.isoformat()
-        start_90d_iso = (now_dt - timedelta(days=90)).isoformat()
+        # Use a longer window so predictions don't disappear when you haven't run a
+        # "classic" distance recently (e.g. only doing 8–13k runs lately).
+        start_365d_iso = (now_dt - timedelta(days=365)).isoformat()
+        start_180d_iso = (now_dt - timedelta(days=180)).isoformat()
 
         with get_db() as conn:
             cur = conn.cursor()
@@ -151,7 +154,7 @@ def assistant_overview(user=Depends(get_current_user)):
                 ORDER BY a.start_time DESC
                 LIMIT 30
                 """,
-                (user["id"], start_90d_iso),
+                (user["id"], start_180d_iso),
             )
             paces = [r[0] for r in cur.fetchall() if isinstance(r[0], (int, float))]
             if len(paces) < 5:
@@ -167,7 +170,7 @@ def assistant_overview(user=Depends(get_current_user)):
                     ORDER BY a.start_time DESC
                     LIMIT 20
                     """,
-                    (user["id"], start_90d_iso),
+                    (user["id"], start_180d_iso),
                 )
                 paces = [r[0] for r in cur.fetchall() if isinstance(r[0], (int, float))]
                 # Bias slower than the median when we don't have HR zones.
@@ -194,24 +197,24 @@ def assistant_overview(user=Depends(get_current_user)):
             pace_label = _format_pace_sec_per_km(pace_target) or "easy"
             today_text = f"Recommended today: {distance_km:.0f} km easy at ~{pace_label} (conversational)."
 
-            # Predictions from recent best full-activity performances (Riegel).
+            # Predictions from best full-activity performances (Riegel).
             predicted_5k, src_5k = _predict_riegel_from_best_pace_activity(
                 conn,
                 user["id"],
                 target_distance_m=5000,
-                start_iso=start_90d_iso,
+                start_iso=start_365d_iso,
                 end_iso=end_iso,
-                min_dist_m=4000,
-                max_dist_m=8000,
+                min_dist_m=3000,
+                max_dist_m=30000,
             )
             predicted_10k, src_10k = _predict_riegel_from_best_pace_activity(
                 conn,
                 user["id"],
                 target_distance_m=10000,
-                start_iso=start_90d_iso,
+                start_iso=start_365d_iso,
                 end_iso=end_iso,
-                min_dist_m=8000,
-                max_dist_m=15000,
+                min_dist_m=5000,
+                max_dist_m=40000,
             )
             source_activity_id = src_5k or src_10k
 
@@ -236,7 +239,7 @@ def assistant_overview(user=Depends(get_current_user)):
             "predictions": {
                 "predicted_5k_time_s": predicted_5k,
                 "predicted_10k_time_s": predicted_10k,
-                "method": "riegel_from_recent_best_activity",
+                "method": "riegel_from_best_activity_365d",
                 "source_activity_id": source_activity_id,
             },
         }

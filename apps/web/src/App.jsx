@@ -255,9 +255,11 @@ export default function App() {
     if (!assistantOpen) return;
     if (assistantOverviewLoading || assistantOverview) return;
     let cancelled = false;
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 8000);
     setAssistantOverviewLoading(true);
     setAssistantOverviewError(null);
-    apiFetch('/assistant/overview')
+    apiFetch('/assistant/overview', { signal: controller.signal })
       .then((r) => r.json())
       .then((json) => {
         if (cancelled) return;
@@ -269,10 +271,13 @@ export default function App() {
       })
       .finally(() => {
         if (cancelled) return;
+        window.clearTimeout(timeoutId);
         setAssistantOverviewLoading(false);
       });
     return () => {
       cancelled = true;
+      window.clearTimeout(timeoutId);
+      controller.abort();
     };
   }, [
     assistantOpen,
