@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends
 from ..cache import get_or_set
 from ..deps import get_current_user
 from ..schemas import (
+    AssistantOverviewResponse,
     InsightsContextRequest,
     InsightsContextResponse,
     InsightsDailyResponse,
@@ -29,6 +30,218 @@ router = APIRouter()
 logger = logging.getLogger("fitness.api")
 
 CACHE_TTL_SECONDS = 45
+
+
+def _format_pace_sec_per_km(pace_sec: float | None) -> str | None:
+    if pace_sec is None or pace_sec <= 0:
+        return None
+    total = int(round(pace_sec))
+    minutes = total // 60
+    seconds = total % 60
+    return f"{minutes}:{seconds:02d}/km"
+
+
+def _predict_riegel_from_best_pace_activity(
+    conn,
+    user_id: int,
+    target_distance_m: int,
+    start_iso: str,
+    end_iso: str,
+    min_dist_m: int,
+    max_dist_m: int,
+    exp: float = 1.06,
+):
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT a.activity_id, c.distance_m, c.moving_s
+        FROM activities a
+        JOIN activities_calc c ON c.activity_id = a.activity_id
+        WHERE a.user_id = ?
+          AND lower(a.activity_type) = 'run'
+          AND a.start_time >= ?
+          AND a.start_time <= ?
+          AND c.distance_m IS NOT NULL
+          AND c.moving_s IS NOT NULL
+          AND c.moving_s > 0
+          AND c.distance_m >= ?
+          AND c.distance_m <= ?
+        ORDER BY (c.moving_s / (c.distance_m / 1000.0)) ASC
+        LIMIT 25
+        """,
+        (user_id, start_iso, end_iso, min_dist_m, max_dist_m),
+    )
+    best_time = None
+    best_activity_id = None
+    for activity_id, distance_m, moving_s in cur.fetchall():
+        try:
+            d1 = float(distance_m)
+            t1 = float(moving_s)
+        except (TypeError, ValueError):
+            continue
+        if d1 <= 0 or t1 <= 0:
+            continue
+        predicted = t1 * ((target_distance_m / d1) ** exp)
+        if predicted <= 0:
+            continue
+        if best_time is None or predicted < best_time:
+            best_time = predicted
+            best_activity_id = str(activity_id)
+    return best_time, best_activity_id
+
+
+@router.get("/assistant/overview", response_model=AssistantOverviewResponse)
+def assistant_overview(user=Depends(get_current_user)):
+    if not db_exists():
+        return {"db": "missing"}
+
+    last_update = get_last_update()
+    cache_key = f"assistant_overview:{user['id']}"
+
+    def compute():
+        now_dt = datetime.now(timezone.utc)
+        end_iso = now_dt.isoformat()
+        start_90d_iso = (now_dt - timedelta(days=90)).isoformat()
+
+        with get_db() as conn:
+            cur = conn.cursor()
+
+            # Trend + volume from weekly rollups.
+            cur.execute(
+                """
+                SELECT week, distance_m, avg_pace_sec, avg_hr_norm
+                FROM metrics_weekly
+                WHERE user_id = ?
+                ORDER BY week DESC
+                LIMIT 12
+                """,
+                (user["id"],),
+            )
+            rows = cur.fetchall() or []
+            dist_7d_km = (rows[0][1] or 0) / 1000.0 if rows else 0.0
+            dist_28d_km = (
+                sum((r[1] or 0) for r in rows[:4]) / 1000.0 if rows else 0.0
+            )
+            pace_series = [r[2] for r in reversed(rows) if r[2] is not None]
+            hr_series = [r[3] for r in reversed(rows) if r[3] is not None]
+            pace_trend = linear_slope(pace_series) if pace_series else None
+            hr_trend = linear_slope(hr_series) if hr_series else None
+
+            trend_pace = _trend_label(pace_trend, better_lower=True, threshold=0.5)
+            trend_hr = _trend_label(hr_trend, better_lower=False, threshold=0.3)
+            pace_clause = f"Pace is {trend_pace}"
+            if pace_trend is not None:
+                pace_clause += f" ({pace_trend:+.2f} sec/km/wk)"
+            hr_clause = f"HR is {trend_hr}"
+            if hr_trend is not None:
+                hr_clause += f" ({hr_trend:+.2f} bpm/wk)"
+            trend_text = f"{pace_clause}. {hr_clause}. Last 7d: {dist_7d_km:.1f} km, 28d: {dist_28d_km:.1f} km."
+
+            # Pick an "easy pace" target from recent endurance runs if available.
+            cur.execute(
+                """
+                SELECT c.flat_pace_sec
+                FROM activities a
+                JOIN activities_calc c ON c.activity_id = a.activity_id
+                WHERE a.user_id = ?
+                  AND lower(a.activity_type) = 'run'
+                  AND a.start_time >= ?
+                  AND c.flat_pace_sec IS NOT NULL
+                  AND c.hr_zone_label = 'Endurance'
+                ORDER BY a.start_time DESC
+                LIMIT 30
+                """,
+                (user["id"], start_90d_iso),
+            )
+            paces = [r[0] for r in cur.fetchall() if isinstance(r[0], (int, float))]
+            if len(paces) < 5:
+                cur.execute(
+                    """
+                    SELECT c.flat_pace_sec
+                    FROM activities a
+                    JOIN activities_calc c ON c.activity_id = a.activity_id
+                    WHERE a.user_id = ?
+                      AND lower(a.activity_type) = 'run'
+                      AND a.start_time >= ?
+                      AND c.flat_pace_sec IS NOT NULL
+                    ORDER BY a.start_time DESC
+                    LIMIT 20
+                    """,
+                    (user["id"], start_90d_iso),
+                )
+                paces = [r[0] for r in cur.fetchall() if isinstance(r[0], (int, float))]
+                # Bias slower than the median when we don't have HR zones.
+                if paces:
+                    paces = [float(p) + 15.0 for p in paces]
+            pace_target = statistics.median(paces) if paces else None
+
+            # Distance recommendation based on recent volume.
+            if dist_28d_km <= 0:
+                distance_km = 5.0
+            elif dist_7d_km < 10:
+                distance_km = 6.0
+            elif dist_7d_km < 25:
+                distance_km = 8.0
+            elif dist_7d_km < 45:
+                distance_km = 10.0
+            else:
+                distance_km = 12.0
+
+            # Slightly de-risk on "declining" trend days.
+            if trend_pace == "declining" and distance_km > 8.0:
+                distance_km = 8.0
+
+            pace_label = _format_pace_sec_per_km(pace_target) or "easy"
+            today_text = f"Recommended today: {distance_km:.0f} km easy at ~{pace_label} (conversational)."
+
+            # Predictions from recent best full-activity performances (Riegel).
+            predicted_5k, src_5k = _predict_riegel_from_best_pace_activity(
+                conn,
+                user["id"],
+                target_distance_m=5000,
+                start_iso=start_90d_iso,
+                end_iso=end_iso,
+                min_dist_m=4000,
+                max_dist_m=8000,
+            )
+            predicted_10k, src_10k = _predict_riegel_from_best_pace_activity(
+                conn,
+                user["id"],
+                target_distance_m=10000,
+                start_iso=start_90d_iso,
+                end_iso=end_iso,
+                min_dist_m=8000,
+                max_dist_m=15000,
+            )
+            source_activity_id = src_5k or src_10k
+
+        return {
+            "status": "ok",
+            "generated_at": now_dt.isoformat(),
+            "today": {
+                "distance_km": distance_km,
+                "pace_target_sec_per_km": pace_target,
+                "pace_range_sec_per_km": (
+                    [pace_target - 10.0, pace_target + 10.0] if pace_target else None
+                ),
+                "text": today_text,
+            },
+            "trend": {
+                "text": trend_text,
+                "dist_7d_km": dist_7d_km,
+                "dist_28d_km": dist_28d_km,
+                "pace_trend_sec_per_week": pace_trend,
+                "hr_trend_bpm_per_week": hr_trend,
+            },
+            "predictions": {
+                "predicted_5k_time_s": predicted_5k,
+                "predicted_10k_time_s": predicted_10k,
+                "method": "riegel_from_recent_best_activity",
+                "source_activity_id": source_activity_id,
+            },
+        }
+
+    return get_or_set(cache_key, CACHE_TTL_SECONDS, last_update, compute)
 
 
 @router.get("/insights", response_model=InsightsResponse)

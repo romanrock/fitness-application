@@ -262,6 +262,36 @@ class InsightsDailyResponse(DBMissingResponse):
     summary: Optional[Dict[str, Any]] = None
 
 
+class AssistantOverviewToday(BaseModel):
+    distance_km: Optional[float] = None
+    pace_target_sec_per_km: Optional[float] = None
+    pace_range_sec_per_km: Optional[List[float]] = None
+    text: Optional[str] = None
+
+
+class AssistantOverviewTrend(BaseModel):
+    text: Optional[str] = None
+    dist_7d_km: Optional[float] = None
+    dist_28d_km: Optional[float] = None
+    pace_trend_sec_per_week: Optional[float] = None
+    hr_trend_bpm_per_week: Optional[float] = None
+
+
+class AssistantOverviewPredictions(BaseModel):
+    predicted_5k_time_s: Optional[float] = None
+    predicted_10k_time_s: Optional[float] = None
+    method: Optional[str] = None
+    source_activity_id: Optional[str] = None
+
+
+class AssistantOverviewResponse(DBMissingResponse):
+    status: str = "ok"
+    generated_at: Optional[str] = None
+    today: Optional[AssistantOverviewToday] = None
+    trend: Optional[AssistantOverviewTrend] = None
+    predictions: Optional[AssistantOverviewPredictions] = None
+
+
 class InsightsContextRequest(BaseModel):
     event_type: str
     payload: Dict[str, Any]

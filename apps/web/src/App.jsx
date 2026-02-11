@@ -12,7 +12,6 @@ const API_BASE = '/api/v1';
 const OVERVIEW_CACHE_KEY = 'fitness_overview_cache';
 const OVERVIEW_CACHE_TTL_MS = 5 * 60 * 1000;
 const ASSISTANT_SESSION_KEY = 'assistant_session_id';
-const DEFAULT_ASSISTANT_QUESTION = 'What should I do today?';
 
 const EMPTY_OVERVIEW = {
   weekLabel: '—',
@@ -85,7 +84,9 @@ export default function App() {
   const [assistantLoading, setAssistantLoading] = useState(false);
   const [assistantError, setAssistantError] = useState(null);
   const [assistantFeedback, setAssistantFeedback] = useState(null);
-  const [assistantAutoRequested, setAssistantAutoRequested] = useState(false);
+  const [assistantOverview, setAssistantOverview] = useState(null);
+  const [assistantOverviewLoading, setAssistantOverviewLoading] = useState(false);
+  const [assistantOverviewError, setAssistantOverviewError] = useState(null);
   const [assistantSessionId, setAssistantSessionId] = useState(() => {
     if (typeof window === 'undefined') return null;
     return window.localStorage.getItem(ASSISTANT_SESSION_KEY);
@@ -247,30 +248,37 @@ export default function App() {
     setAssistantResponse(null);
     setAssistantFeedback(null);
     setAssistantError(null);
-    setAssistantAutoRequested(false);
     setAssistantQuestion('');
   }, []);
 
   useEffect(() => {
-    if (!assistantOpen) {
-      if (assistantAutoRequested) setAssistantAutoRequested(false);
-      return;
-    }
-    if (assistantAutoRequested || assistantLoading || assistantResponse) return;
-    if (assistantMessages.length > 0) return;
-    setAssistantAutoRequested(true);
-    if (!assistantQuestion.trim()) {
-      setAssistantQuestion(DEFAULT_ASSISTANT_QUESTION);
-    }
-    handleAskAssistant(DEFAULT_ASSISTANT_QUESTION);
+    if (!assistantOpen) return;
+    if (assistantOverviewLoading || assistantOverview) return;
+    let cancelled = false;
+    setAssistantOverviewLoading(true);
+    setAssistantOverviewError(null);
+    apiFetch('/assistant/overview')
+      .then((r) => r.json())
+      .then((json) => {
+        if (cancelled) return;
+        setAssistantOverview(json);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setAssistantOverviewError('Failed to load assistant overview.');
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setAssistantOverviewLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [
     assistantOpen,
-    assistantAutoRequested,
-    assistantLoading,
-    assistantResponse,
-    assistantMessages.length,
-    assistantQuestion,
-    handleAskAssistant
+    assistantOverviewLoading,
+    assistantOverview,
+    apiFetch
   ]);
 
   const handleFeedback = useCallback((value) => {
@@ -733,6 +741,17 @@ export default function App() {
             </div>
             <div className="assistant-header-actions">
               <button className="assistant-chip" type="button" onClick={resetAssistantSession}>New chat</button>
+              <button
+                className="assistant-chip"
+                type="button"
+                onClick={() => {
+                  setAssistantOverview(null);
+                  setAssistantOverviewError(null);
+                }}
+                disabled={assistantOverviewLoading}
+              >
+                {assistantOverviewLoading ? 'Refreshing…' : 'Refresh'}
+              </button>
               <button className="icon-btn" type="button" onClick={() => setAssistantOpen(false)}>Close</button>
             </div>
           </div>
@@ -742,20 +761,21 @@ export default function App() {
             <div className="assistant-summary-grid">
               <div className="assistant-summary-card">
                 <div className="assistant-subtitle">Today recommended run</div>
-                <p>{assistantResponse?.today_recommendation || assistantMessages.at(-1)?.todayRecommendation || '—'}</p>
+                <p>{assistantOverview?.today?.text || assistantResponse?.today_recommendation || assistantMessages.at(-1)?.todayRecommendation || (assistantOverviewLoading ? 'Loading…' : '—')}</p>
               </div>
               <div className="assistant-summary-card">
                 <div className="assistant-subtitle">Trend insight</div>
-                <p>{assistantResponse?.trend_insight || assistantMessages.at(-1)?.trendInsight || '—'}</p>
+                <p>{assistantOverview?.trend?.text || assistantResponse?.trend_insight || assistantMessages.at(-1)?.trendInsight || (assistantOverviewLoading ? 'Loading…' : '—')}</p>
               </div>
               <div className="assistant-summary-card">
                 <div className="assistant-subtitle">Predicted 5k / 10k</div>
                 <p>
-                  5k {formatDuration(assistantResponse?.predicted_5k_time_s ?? assistantMessages.at(-1)?.predicted5k)} ·
-                  10k {formatDuration(assistantResponse?.predicted_10k_time_s ?? assistantMessages.at(-1)?.predicted10k)}
+                  5k {formatDuration(assistantOverview?.predictions?.predicted_5k_time_s ?? assistantResponse?.predicted_5k_time_s ?? assistantMessages.at(-1)?.predicted5k)} ·
+                  10k {formatDuration(assistantOverview?.predictions?.predicted_10k_time_s ?? assistantResponse?.predicted_10k_time_s ?? assistantMessages.at(-1)?.predicted10k)}
                 </p>
               </div>
             </div>
+            {assistantOverviewError && <div className="muted">{assistantOverviewError}</div>}
           </div>
 
           <div className="assistant-section">
