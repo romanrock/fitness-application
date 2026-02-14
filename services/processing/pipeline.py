@@ -13,7 +13,17 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from packages import db
-from packages.config import DB_PATH, LAST_UPDATE_PATH, HR_MAX, HR_REST, HR_ZONE_METHOD
+from packages.config import (
+    DB_PATH,
+    LAST_UPDATE_PATH,
+    DECOUPLING_COOLDOWN_SEC,
+    DECOUPLING_GRADE_MAX,
+    DECOUPLING_MIN_SAMPLES,
+    DECOUPLING_WARMUP_SEC,
+    HR_MAX,
+    HR_REST,
+    HR_ZONE_METHOD,
+)
 
 
 @dataclass
@@ -455,7 +465,17 @@ def compute_run_drift(streams: Dict[str, dict], hr_norm: Optional[List[Optional[
     total_dist = dist[-1]
     if not total_dist or total_dist <= 0:
         return None, None
-    half_dist = total_dist / 2
+    total_time = time[-1]
+    if not total_time or total_time <= 0:
+        return None, None
+    alt = stream_data(streams, "altitude")
+    has_alt = bool(alt and len(alt) == n)
+
+    def dist_at_time(target_s: float) -> Optional[float]:
+        for i in range(n):
+            if time[i] >= target_s:
+                return dist[i]
+        return None
 
     def trimmed_mean(values: List[float], trim: float = 0.1) -> Optional[float]:
         vals = [v for v in values if v is not None]
@@ -471,41 +491,83 @@ def compute_run_drift(streams: Dict[str, dict], hr_norm: Optional[List[Optional[
         trimmed = vals[k:n_vals - k]
         return sum(trimmed) / len(trimmed)
 
-    pace1_samples: List[float] = []
-    pace2_samples: List[float] = []
-    hr1_samples: List[float] = []
-    hr2_samples: List[float] = []
-    for i in range(1, n):
-        dt = time[i] - time[i - 1]
-        dd = dist[i] - dist[i - 1]
-        if dt <= 0 or dd <= 0:
-            continue
-        pace_sec = dt / (dd / 1000)
-        if dist[i] <= half_dist:
-            pace1_samples.append(pace_sec)
-            if hr[i] is not None:
-                hr1_samples.append(hr[i])
-        else:
-            pace2_samples.append(pace_sec)
-            if hr[i] is not None:
-                hr2_samples.append(hr[i])
+    def compute_samples(
+        start_d: float,
+        end_d: float,
+        grade_filter: bool = True,
+    ) -> Tuple[List[float], List[float], List[float], List[float]]:
+        mid_d = (start_d + end_d) / 2
+        pace1_samples: List[float] = []
+        pace2_samples: List[float] = []
+        hr1_samples: List[float] = []
+        hr2_samples: List[float] = []
+        for i in range(1, n):
+            if dist[i] < start_d or dist[i] > end_d:
+                continue
+            dt = time[i] - time[i - 1]
+            dd = dist[i] - dist[i - 1]
+            if dt <= 0 or dd <= 0:
+                continue
+            hr_i = hr[i]
+            if hr_i is None or hr_i <= 0:
+                continue
+            pace_sec = dt / (dd / 1000)
+            # Filter implausible paces to avoid stops/spikes dominating decoupling.
+            if pace_sec < 150 or pace_sec > 900:
+                continue
+            if has_alt:
+                da = alt[i] - alt[i - 1]  # type: ignore[index]
+                grade = da / dd
+                if grade_filter and (grade > DECOUPLING_GRADE_MAX or grade < -DECOUPLING_GRADE_MAX):
+                    continue
+                # Use the same grade cost curve as flat-pace to reduce hill bias.
+                cost = 1 + 0.045 * grade + 0.35 * grade * grade
+                pace_sec = pace_sec * cost
+            if dist[i] <= mid_d:
+                pace1_samples.append(pace_sec)
+                hr1_samples.append(float(hr_i))
+            else:
+                pace2_samples.append(pace_sec)
+                hr2_samples.append(float(hr_i))
+        return pace1_samples, pace2_samples, hr1_samples, hr2_samples
 
-    pace1 = trimmed_mean(pace1_samples)
-    pace2 = trimmed_mean(pace2_samples)
-    hr1 = trimmed_mean(hr1_samples)
-    hr2 = trimmed_mean(hr2_samples)
-    if not pace1 or not pace2 or not hr1 or not hr2:
-        return None, None
-    if hr1 <= 0 or hr2 <= 0:
-        return None, None
+    def drift_from_samples(pace1_samples: List[float], pace2_samples: List[float], hr1_samples: List[float], hr2_samples: List[float]) -> Tuple[Optional[float], Optional[float]]:
+        pace1 = trimmed_mean(pace1_samples)
+        pace2 = trimmed_mean(pace2_samples)
+        hr1 = trimmed_mean(hr1_samples)
+        hr2 = trimmed_mean(hr2_samples)
+        if not pace1 or not pace2 or not hr1 or not hr2:
+            return None, None
+        if hr1 <= 0 or hr2 <= 0:
+            return None, None
+        hr_drift = hr2 - hr1
+        decoupling = ((pace2 / pace1) / (hr2 / hr1) - 1) * 100
+        if decoupling > 50:
+            decoupling = 50
+        if decoupling < -50:
+            decoupling = -50
+        return hr_drift, decoupling
 
-    hr_drift = hr2 - hr1
-    decoupling = ((pace2 / pace1) / (hr2 / hr1) - 1) * 100
-    if decoupling > 50:
-        decoupling = 50
-    if decoupling < -50:
-        decoupling = -50
-    return hr_drift, decoupling
+    # Prefer "steady-state" decoupling: ignore warmup/cooldown time and steep grades.
+    warmup_s = max(0, DECOUPLING_WARMUP_SEC)
+    cooldown_s = max(0, DECOUPLING_COOLDOWN_SEC)
+    start_d = dist_at_time(float(warmup_s)) if total_time > (warmup_s + cooldown_s + 300) else None
+    end_d = dist_at_time(max(total_time - float(cooldown_s), 0.0)) if start_d is not None else None
+    if start_d is not None and end_d is not None and end_d > start_d:
+        s1, s2, h1, h2 = compute_samples(start_d, end_d, grade_filter=True)
+        if (
+            len(s1) >= DECOUPLING_MIN_SAMPLES
+            and len(s2) >= DECOUPLING_MIN_SAMPLES
+            and len(h1) >= DECOUPLING_MIN_SAMPLES
+            and len(h2) >= DECOUPLING_MIN_SAMPLES
+        ):
+            drift = drift_from_samples(s1, s2, h1, h2)
+            if drift != (None, None):
+                return drift
+
+    # Fallback to whole-run halves by distance (works for short runs / missing altitude).
+    s1, s2, h1, h2 = compute_samples(0.0, total_dist, grade_filter=False)
+    return drift_from_samples(s1, s2, h1, h2)
 
 
 def compute_hr_zones(
@@ -1116,7 +1178,12 @@ def process():
 
 
 def main():
-    process()
+    try:
+        process()
+    except KeyboardInterrupt:
+        # Avoid a noisy stack trace when stopping dev runs.
+        print("Interrupted.")
+        raise SystemExit(130)
     print("Processed raw -> normalized -> calculated (views read from DB)")
 
 

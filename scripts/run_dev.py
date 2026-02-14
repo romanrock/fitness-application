@@ -81,8 +81,9 @@ def start_api(py):
     env = os.environ.copy()
     if RUN_MODE != "prod":
         env["FITNESS_AUTH_DISABLED"] = "1"
-        env["FITNESS_RUN_INGEST_ON_START"] = "1"
-        env["FITNESS_PIPELINE_INTERVAL"] = str(REFRESH_SECONDS)
+        # The dev worker already runs the pipeline on a schedule; don't also run
+        # ingestion from the API process (avoids lock contention / confusing logs).
+        env["FITNESS_RUN_INGEST_ON_START"] = "0"
     return subprocess.Popen(
         [str(py), "-m", "uvicorn", "apps.api.main:app", *reload_flag, "--host", "0.0.0.0", "--port", str(API_PORT)],
         cwd=str(ROOT),

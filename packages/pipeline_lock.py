@@ -26,7 +26,36 @@ def _is_stale(path: str) -> bool:
         mtime = os.path.getmtime(path)
     except OSError:
         return False
-    return (time.time() - mtime) > _lock_ttl()
+    if (time.time() - mtime) > _lock_ttl():
+        return True
+
+    # If the lock holder process is gone, treat as stale even if within TTL.
+    try:
+        payload = ""
+        with open(path, "r", encoding="utf-8") as f:
+            payload = f.read()
+        pid = None
+        for part in payload.split():
+            if part.startswith("pid="):
+                try:
+                    pid = int(part.split("=", 1)[1])
+                except ValueError:
+                    pid = None
+                break
+        if pid is None or pid <= 0:
+            return False
+        try:
+            os.kill(pid, 0)
+            return False
+        except ProcessLookupError:
+            return True
+        except PermissionError:
+            # PID exists but we can't signal it; assume it's alive.
+            return False
+        except OSError:
+            return False
+    except OSError:
+        return False
 
 
 def _acquire(path: str) -> bool:

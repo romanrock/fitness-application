@@ -56,6 +56,12 @@ HR_REST = float(os.getenv("FITNESS_HR_REST", "48"))
 HR_MAX = float(os.getenv("FITNESS_HR_MAX", "185"))
 HR_ZONE_METHOD = os.getenv("FITNESS_HR_ZONE_METHOD", "hrr")
 
+# Decoupling / drift (Pa:Hr) calculation knobs.
+DECOUPLING_WARMUP_SEC = int(os.getenv("FITNESS_DECOUPLING_WARMUP_SEC", "600"))
+DECOUPLING_COOLDOWN_SEC = int(os.getenv("FITNESS_DECOUPLING_COOLDOWN_SEC", "300"))
+DECOUPLING_GRADE_MAX = float(os.getenv("FITNESS_DECOUPLING_GRADE_MAX", "0.03"))
+DECOUPLING_MIN_SAMPLES = int(os.getenv("FITNESS_DECOUPLING_MIN_SAMPLES", "20"))
+
 # Worker reliability settings
 PIPELINE_MAX_RETRIES = int(os.getenv("FITNESS_PIPELINE_MAX_RETRIES", "2"))
 PIPELINE_BACKOFF_BASE_SEC = float(os.getenv("FITNESS_PIPELINE_BACKOFF_BASE_SEC", "5"))
